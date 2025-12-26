@@ -1,0 +1,78 @@
+/**
+ * CSS变量定义
+ * CSS variables definition
+ */
+
+:root {
+  /* 主题色 */
+  --primary-color: #1890ff;
+  --success-color: #52c41a;
+  --warning-color: #faad14;
+  --error-color: #ff4d4f;
+  --info-color: #1890ff;
+
+  /* 风险等级颜色 */
+  --risk-low: #52c41a;
+  --risk-medium: #faad14;
+  --risk-high: #ff4d4f;
+  --risk-critical: #cf1322;
+
+  /* 中性色 */
+  --text-primary: rgba(0, 0, 0, 0.85);
+  --text-secondary: rgba(0, 0, 0, 0.65);
+  --text-disabled: rgba(0, 0, 0, 0.25);
+  --border-color: #d9d9d9;
+  --divider-color: #f0f0f0;
+  --background-color: #f0f2f5;
+  --background-light: #fafafa;
+
+  /* 尺寸 */
+  --border-radius: 8px;
+  --border-radius-sm: 4px;
+  --border-radius-lg: 12px;
+
+  /* 间距 */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+
+  /* 字体 */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-xxl: 24px;
+
+  /* 过渡 */
+  --transition-fast: 0.1s;
+  --transition-base: 0.2s;
+  --transition-slow: 0.3s;
+
+  /* 布局 */
+  --layout-header-height: 64px;
+  --layout-sider-width: 240px;
+  --layout-sider-collapsed-width: 80px;
+  --layout-footer-height: 48px;
+}
+
+/* 暗色主题 */
+[data-theme='dark'] {
+  --text-primary: rgba(255, 255, 255, 0.85);
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --text-disabled: rgba(255, 255, 255, 0.25);
+  --border-color: #434343;
+  --divider-color: #1f1f1f;
+  --background-color: #141414;
+  --background-light: #1f1f1f;
+}

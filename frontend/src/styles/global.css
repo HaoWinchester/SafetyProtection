@@ -1,0 +1,289 @@
+/**
+ * 全局样式
+ * Global styles
+ */
+
+@import './variables.css';
+
+/* 基础样式重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  background-color: var(--background-color);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100%;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* 链接样式 */
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+  transition: color var(--transition-base);
+}
+
+a:hover {
+  color: #40a9ff;
+}
+
+/* 通用工具类 */
+.text-center {
+  text-align: center;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.mt-xs {
+  margin-top: var(--spacing-xs);
+}
+
+.mt-sm {
+  margin-top: var(--spacing-sm);
+}
+
+.mt-md {
+  margin-top: var(--spacing-md);
+}
+
+.mt-lg {
+  margin-top: var(--spacing-lg);
+}
+
+.mt-xl {
+  margin-top: var(--spacing-xl);
+}
+
+.mb-xs {
+  margin-bottom: var(--spacing-xs);
+}
+
+.mb-sm {
+  margin-bottom: var(--spacing-sm);
+}
+
+.mb-md {
+  margin-bottom: var(--spacing-md);
+}
+
+.mb-lg {
+  margin-bottom: var(--spacing-lg);
+}
+
+.mb-xl {
+  margin-bottom: var(--spacing-xl);
+}
+
+.p-xs {
+  padding: var(--spacing-xs);
+}
+
+.p-sm {
+  padding: var(--spacing-sm);
+}
+
+.p-md {
+  padding: var(--spacing-md);
+}
+
+.p-lg {
+  padding: var(--spacing-lg);
+}
+
+.p-xl {
+  padding: var(--spacing-xl);
+}
+
+/* Flex布局 */
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.flex-start {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.flex-end {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+/* 卡片样式 */
+.card {
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--spacing-lg);
+}
+
+.card-hover {
+  transition: box-shadow var(--transition-base);
+}
+
+.card-hover:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* 状态标签 */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.status-badge.success {
+  background: #f6ffed;
+  color: var(--success-color);
+  border: 1px solid #b7eb8f;
+}
+
+.status-badge.warning {
+  background: #fffbe6;
+  color: var(--warning-color);
+  border: 1px solid #ffe58f;
+}
+
+.status-badge.error {
+  background: #fff1f0;
+  color: var(--error-color);
+  border: 1px solid #ffccc7;
+}
+
+.status-badge.info {
+  background: #e6f7ff;
+  color: var(--info-color);
+  border: 1px solid #91d5ff;
+}
+
+/* 风险等级标签 */
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.risk-badge.low {
+  background: #f6ffed;
+  color: var(--risk-low);
+  border: 1px solid #b7eb8f;
+}
+
+.risk-badge.medium {
+  background: #fffbe6;
+  color: var(--risk-medium);
+  border: 1px solid #ffe58f;
+}
+
+.risk-badge.high {
+  background: #fff1f0;
+  color: var(--risk-high);
+  border: 1px solid #ffccc7;
+}
+
+.risk-badge.critical {
+  background: #5c0011;
+  color: var(--risk-critical);
+  border: 1px solid #a8071a;
+}
+
+/* 加载遮罩 */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none !important;
+  }
+
+  .card {
+    padding: var(--spacing-md);
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

@@ -1,0 +1,12 @@
+/**
+ * Tailwind CSS / Ant Design 样式导入
+ * Style imports for Tailwind CSS and Ant Design
+ */
+
+@import './styles/variables.css';
+@import './styles/global.css';
+
+/* 如果使用Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
