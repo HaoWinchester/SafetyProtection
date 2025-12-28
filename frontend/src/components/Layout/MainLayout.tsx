@@ -101,6 +101,21 @@ const MainLayout: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
+  const [openKeys, setOpenKeys] = useState<string[]>([])
+
+  /**
+   * 根据当前路由初始化展开的菜单
+   */
+  React.useEffect(() => {
+    const path = location.pathname
+    if (path.startsWith('/detection')) {
+      setOpenKeys(['detection'])
+    } else if (path.startsWith('/evaluation')) {
+      setOpenKeys(['evaluation'])
+    } else {
+      setOpenKeys([])
+    }
+  }, [location.pathname])
 
   /**
    * 菜单点击处理
@@ -110,24 +125,17 @@ const MainLayout: React.FC = () => {
   }
 
   /**
+   * 子菜单展开/收起处理
+   */
+  const handleOpenChange: MenuProps['onOpenChange'] = (keys) => {
+    setOpenKeys(keys)
+  }
+
+  /**
    * 获取当前选中的菜单键
    */
   const getSelectedKeys = () => {
     return [location.pathname]
-  }
-
-  /**
-   * 获取当前展开的菜单键
-   */
-  const getOpenKeys = () => {
-    const path = location.pathname
-    if (path.startsWith('/detection')) {
-      return ['detection']
-    }
-    if (path.startsWith('/evaluation')) {
-      return ['evaluation']
-    }
-    return []
   }
 
   return (
@@ -169,7 +177,8 @@ const MainLayout: React.FC = () => {
           theme="dark"
           mode="inline"
           selectedKeys={getSelectedKeys()}
-          defaultOpenKeys={getOpenKeys()}
+          openKeys={openKeys}
+          onOpenChange={handleOpenChange}
           items={menuItems}
           onClick={handleMenuClick}
         />
