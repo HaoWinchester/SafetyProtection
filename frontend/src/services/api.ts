@@ -45,15 +45,8 @@ const createApiClient = (): AxiosInstance => {
 
   // 响应拦截器
   instance.interceptors.response.use(
-    (response: AxiosResponse<ApiResponse>) => {
-      const { data } = response
-
-      // 根据后端返回结构进行调整
-      if (data.success === false || data.code && data.code >= 400) {
-        message.error(data.message || '请求失败')
-        return Promise.reject(new Error(data.message || '请求失败'))
-      }
-
+    (response: AxiosResponse) => {
+      // 直接返回响应数据,因为后端没有包装在ApiResponse中
       return response
     },
     (error: AxiosError<ApiResponse>) => {
@@ -106,8 +99,9 @@ export const apiClient = createApiClient()
 export const request = async <T = any>(
   config: AxiosRequestConfig
 ): Promise<T> => {
-  const response = await apiClient.request<ApiResponse<T>>(config)
-  return response.data.data
+  const response = await apiClient.request<T>(config)
+  // 后端直接返回数据，没有包装在ApiResponse中
+  return response.data
 }
 
 /**

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__milk-tea__claim_milk_tea_coupon"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

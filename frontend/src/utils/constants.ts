@@ -10,23 +10,23 @@ import { RiskLevel, AttackType, DetectionLevel } from '@/types'
  */
 export const API_ENDPOINTS = {
   // 检测相关
-  DETECTION_REALTIME: '/api/detect',
-  DETECTION_BATCH: '/api/detect/batch',
-  DETECTION_HISTORY: '/api/detections/history',
+  DETECTION_REALTIME: '/detection/detect',
+  DETECTION_BATCH: '/detection/batch',
+  DETECTION_HISTORY: '/detections/history',
 
   // 统计相关
-  STATISTICS_OVERVIEW: '/api/statistics/overview',
-  STATISTICS_TRENDS: '/api/statistics/trends',
-  STATISTICS_DISTRIBUTION: '/api/statistics/distribution',
+  STATISTICS_OVERVIEW: '/statistics/overview',
+  STATISTICS_TRENDS: '/statistics/trends',
+  STATISTICS_DISTRIBUTION: '/statistics/distribution',
 
   // 监控相关
-  MONITOR_SYSTEM: '/api/monitor/system',
-  MONITOR_ENGINE: '/api/monitor/engine',
-  MONITOR_PERFORMANCE: '/api/monitor/performance',
+  MONITOR_SYSTEM: '/monitor/system',
+  MONITOR_ENGINE: '/monitor/engine',
+  MONITOR_PERFORMANCE: '/monitor/performance',
 
   // 设置相关
-  SETTINGS_CONFIG: '/api/settings/config',
-  SETTINGS_RULES: '/api/settings/rules',
+  SETTINGS_CONFIG: '/settings/config',
+  SETTINGS_RULES: '/settings/rules',
 } as const
 
 /**
