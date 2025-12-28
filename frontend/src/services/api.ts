@@ -3,7 +3,7 @@
  * Axios API client configuration
  */
 
-import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios'
+import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, AxiosResponse, CancelTokenSource } from 'axios'
 import { message } from 'antd'
 
 /**
@@ -17,12 +17,18 @@ interface ApiResponse<T = any> {
 }
 
 /**
+ * 请求取消令牌映射
+ */
+const pendingRequests = new Map<string, CancelTokenSource>()
+
+/**
  * 创建Axios实例
  */
 const createApiClient = (): AxiosInstance => {
   const instance = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
-    timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '30000'),
+    // 缩短超时时间：从30秒改为5秒，快速失败
+    timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '5000'),
     headers: {
       'Content-Type': 'application/json',
     },
@@ -31,6 +37,20 @@ const createApiClient = (): AxiosInstance => {
   // 请求拦截器
   instance.interceptors.request.use(
     (config) => {
+      // 生成请求唯一标识
+      const requestKey = `${config.method}-${config.url}-${JSON.stringify(config.params || {})}`
+
+      // 取消之前的重复请求
+      const pendingSource = pendingRequests.get(requestKey)
+      if (pendingSource) {
+        pendingSource.cancel('取消重复请求')
+      }
+
+      // 创建新的取消令牌
+      const source = axios.CancelToken.source()
+      config.cancelToken = source.token
+      pendingRequests.set(requestKey, source)
+
       // 可以在这里添加认证token
       // const token = localStorage.getItem('token')
       // if (token) {
@@ -46,10 +66,26 @@ const createApiClient = (): AxiosInstance => {
   // 响应拦截器
   instance.interceptors.response.use(
     (response: AxiosResponse) => {
+      // 清理已完成的请求
+      const requestKey = `${response.config.method}-${response.config.url}-${JSON.stringify(response.config.params || {})}`
+      pendingRequests.delete(requestKey)
+
       // 直接返回响应数据,因为后端没有包装在ApiResponse中
       return response
     },
     (error: AxiosError<ApiResponse>) => {
+      // 清理已取消或失败的请求
+      if (error.config) {
+        const requestKey = `${error.config.method}-${error.config.url}-${JSON.stringify(error.config.params || {})}`
+        pendingRequests.delete(requestKey)
+      }
+
+      // 如果是请求取消，不显示错误消息
+      if (axios.isCancel(error)) {
+        console.log('请求已取消:', error.message)
+        return Promise.reject(error)
+      }
+
       const { response } = error
 
       if (response) {
@@ -76,9 +112,9 @@ const createApiClient = (): AxiosInstance => {
             message.error(data?.message || `请求失败 (${status})`)
         }
       } else if (error.code === 'ECONNABORTED') {
-        message.error('请求超时，请稍后重试')
+        message.error('请求超时，请检查后端服务是否已启动')
       } else {
-        message.error('网络错误，请检查网络连接')
+        message.error('网络错误，请检查网络连接和后端服务状态')
       }
 
       return Promise.reject(error)

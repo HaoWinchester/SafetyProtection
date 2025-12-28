@@ -36,6 +36,29 @@ const Dashboard: React.FC = () => {
   const { overview, trends, distribution, loading, error } = useStatistics()
 
   /**
+   * 渲染错误状态
+   */
+  const renderError = () => {
+    if (!error) return null
+
+    return (
+      <Card style={{ marginBottom: 24 }}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Typography.Text type="danger">
+            {error}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            请检查：
+            <br />1. 后端服务是否已启动 (运行 start.bat)
+            <br />2. 后端是否运行在 http://localhost:8000
+            <br />3. 查看浏览器控制台获取详细错误信息
+          </Typography.Text>
+        </Space>
+      </Card>
+    )
+  }
+
+  /**
    * 渲染统计卡片
    */
   const renderStatisticCards = () => {
@@ -259,6 +282,9 @@ const Dashboard: React.FC = () => {
           查看系统整体运行状态和检测统计信息
         </Text>
       </div>
+
+      {/* 错误提示 */}
+      {renderError()}
 
       {/* 统计卡片 */}
       {renderStatisticCards()}

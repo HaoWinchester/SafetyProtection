@@ -84,17 +84,29 @@ export const useStatistics = (
 
   /**
    * 刷新所有数据
+   * 优化：独立处理每个请求，避免一个失败影响全部
    */
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
 
     try {
-      await Promise.all([
+      // 使用Promise.allSettled代替Promise.all，确保每个请求独立处理
+      const results = await Promise.allSettled([
         fetchOverview(),
         fetchTrends(),
         fetchDistribution(),
       ])
+
+      // 检查是否有失败的请求
+      const failedRequests = results.filter(r => r.status === 'rejected')
+      if (failedRequests.length > 0) {
+        console.warn('部分统计请求失败:', failedRequests)
+        // 如果全部失败才设置错误
+        if (failedRequests.length === results.length) {
+          setError('无法连接到服务器，请确保后端服务已启动')
+        }
+      }
     } catch (err: any) {
       setError(err.message || '获取统计数据失败')
     } finally {

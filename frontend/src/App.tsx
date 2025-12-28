@@ -3,11 +3,12 @@
  * Main application component with routing
  */
 
-import React, { Suspense, lazy } from 'react'
+import React, { Suspense, lazy, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { Spin } from 'antd'
+import { Spin, message } from 'antd'
 import { ConfigProvider, theme } from 'antd'
 import MainLayout from './components/Layout/MainLayout'
+import { checkBackendHealthWithCache } from './services/healthService'
 
 // 懒加载页面组件
 const Dashboard = lazy(() => import('./pages/Dashboard/index'))
@@ -76,6 +77,22 @@ class ErrorBoundary extends React.Component<
  * App组件
  */
 const App: React.FC = () => {
+  /**
+   * 启动时检查后端健康状态
+   */
+  useEffect(() => {
+    const checkHealth = async () => {
+      const result = await checkBackendHealthWithCache()
+      if (!result.healthy) {
+        console.warn('后端服务未启动:', result.error)
+        // 只在控制台警告，不显示消息，避免打扰用户
+        // Dashboard页面会显示更详细的错误信息
+      }
+    }
+
+    checkHealth()
+  }, [])
+
   return (
     <ErrorBoundary>
       <ConfigProvider
