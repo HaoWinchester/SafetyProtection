@@ -309,3 +309,88 @@ class DetectionRule(Base, TimestampMixin):
             f"<DetectionRule(id={self.id}, rule_id={self.rule_id}, "
             f"rule_name={self.rule_name}, is_active={self.is_active})>"
         )
+
+
+class ViolationRecord(Base, TimestampMixin):
+    """
+    Violation record model.
+
+    Stores individual violation events detected during analysis.
+    """
+
+    __tablename__ = "violation_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    violation_id: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+        doc="Unique violation identifier"
+    )
+
+    detection_record_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("detection_records.id"),
+        nullable=True,
+        index=True,
+        doc="Associated detection record ID"
+    )
+
+    violation_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Type of violation"
+    )
+
+    severity: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+        doc="Severity level: low, medium, high, critical"
+    )
+
+    rule_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("detection_rules.id"),
+        nullable=True,
+        doc="Triggered rule ID if applicable"
+    )
+
+    matched_pattern: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Pattern or keyword that matched"
+    )
+
+    context: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Context where violation was detected"
+    )
+
+    description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Detailed description of the violation"
+    )
+
+    confidence_score: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+        doc="Confidence score of the violation (0-1)"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_violation_type_created", "violation_type", "created_at"),
+        Index("idx_severity_created", "severity", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ViolationRecord(id={self.id}, violation_id={self.violation_id}, "
+            f"violation_type={self.violation_type}, severity={self.severity})>"
+        )

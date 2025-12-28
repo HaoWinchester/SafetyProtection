@@ -19,6 +19,7 @@ from app.schemas.detection import (
 )
 from app.schemas.common import SuccessResponse, MessageResponse
 from app.services.detection_service import detection_service
+from app.services.persistence_service import persistence_service
 from app.utils.helpers import generate_request_id, get_client_ip
 
 router = APIRouter()
@@ -72,8 +73,23 @@ async def detect_threats(
         # Perform detection
         result = await detection_service.detect(request)
 
-        # TODO: Store result in database
-        # await store_detection_result(db, result, http_request)
+        # Store result in database
+        try:
+            ip_address = get_client_ip(http_request) if http_request else None
+            user_agent = http_request.headers.get("user-agent") if http_request else None
+
+            await persistence_service.store_detection_result(
+                db=db,
+                result=result,
+                request=request,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        except Exception as db_error:
+            # Log error but don't fail the request
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to store detection result: {db_error}")
 
         return result
 
@@ -162,51 +178,79 @@ async def batch_detect_threats(
 
 @router.get("/statistics", response_model=StatisticsResponse)
 async def get_statistics(
+    start: str = None,
+    end: str = None,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_optional_user_id),
 ):
     """
     Get detection statistics.
 
     Returns aggregated statistics about detections performed.
-    Requires authentication.
 
     Args:
+        start: Optional start date (ISO format)
+        end: Optional end date (ISO format)
         db: Database session
-        user_id: User ID from JWT token
+        user_id: Optional user ID from JWT token
 
     Returns:
         StatisticsResponse: Detection statistics
 
     Example:
         ```python
-        response = await client.get("/api/v1/detection/statistics",
-            headers={"Authorization": "Bearer <token>"})
+        response = await client.get("/api/v1/detection/statistics")
         ```
     """
-    try:
-        # Get in-memory statistics
-        stats = detection_service.get_statistics()
+    from datetime import datetime, timedelta
 
-        # TODO: Get detailed statistics from database
-        # db_stats = await get_statistics_from_db(db, user_id)
+    try:
+        # Parse date filters
+        start_date = None
+        end_date = None
+
+        if start:
+            try:
+                start_date = datetime.fromisoformat(start.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+
+        if end:
+            try:
+                end_date = datetime.fromisoformat(end.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+
+        # Get statistics from database
+        db_stats = await persistence_service.get_statistics_from_db(
+            db=db,
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        # Get in-memory stats for processing time metrics
+        mem_stats = detection_service.get_statistics()
+
+        # Calculate risk distribution
+        risk_dist = db_stats.get("risk_distribution", {})
 
         return StatisticsResponse(
-            total_detections=stats["total_detections"],
-            compliant_count=stats["compliant_count"],
-            non_compliant_count=stats["non_compliant_count"],
+            total_detections=db_stats["total_detections"],
+            compliant_count=db_stats["compliant_count"],
+            non_compliant_count=db_stats["non_compliant_count"],
             risk_distribution={
-                "low": 0,
-                "medium": 0,
-                "high": 0,
-                "critical": 0,
+                "low": risk_dist.get("low", 0),
+                "medium": risk_dist.get("medium", 0),
+                "high": risk_dist.get("high", 0),
+                "critical": risk_dist.get("critical", 0),
             },
-            attack_type_distribution={},
-            average_processing_time_ms=stats.get("average_processing_time_ms", 0.0),
-            p95_processing_time_ms=0.0,
-            p99_processing_time_ms=0.0,
-            detections_last_24h=0,
-            detections_last_hour=0,
+            attack_type_distribution=db_stats.get("attack_distribution", {}),
+            average_processing_time_ms=mem_stats.get("average_processing_time_ms", 0.0),
+            p95_processing_time_ms=0.0,  # TODO: Calculate from database
+            p99_processing_time_ms=0.0,  # TODO: Calculate from database
+            detections_last_24h=0,  # TODO: Calculate from database
+            detections_last_hour=0,  # TODO: Calculate from database
         )
 
     except Exception as e:
@@ -220,8 +264,11 @@ async def get_statistics(
 async def get_detection_history(
     skip: int = 0,
     limit: int = 20,
+    risk_level: str = None,
+    start: str = None,
+    end: str = None,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_optional_user_id),
 ):
     """
     Get detection history.
@@ -231,29 +278,63 @@ async def get_detection_history(
     Args:
         skip: Number of records to skip (pagination)
         limit: Maximum number of records to return
+        risk_level: Optional risk level filter
+        start: Optional start date (ISO format)
+        end: Optional end date (ISO format)
         db: Database session
-        user_id: User ID from JWT token
+        user_id: User ID from JWT token (optional)
 
     Returns:
         DetectionHistoryResponse: Paginated detection history
 
     Example:
         ```python
-        response = await client.get("/api/v1/detection/history?page=1&page_size=20",
+        response = await client.get("/api/v1/detection/history?skip=0&limit=20",
             headers={"Authorization": "Bearer <token>"})
         ```
     """
-    try:
-        # TODO: Implement actual database query
-        # records = await get_detection_records(db, user_id, skip, limit)
+    from datetime import datetime
 
-        # Placeholder response
+    try:
+        # Parse date filters
+        start_date = None
+        end_date = None
+
+        if start:
+            try:
+                start_date = datetime.fromisoformat(start.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+
+        if end:
+            try:
+                end_date = datetime.fromisoformat(end.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+
+        # Query database
+        history_data = await persistence_service.get_detection_history(
+            db=db,
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+            risk_level=risk_level,
+            limit=limit,
+            offset=skip
+        )
+
+        # Convert to response format
+        records = [
+            DetectionHistoryItem(**record)
+            for record in history_data["history"]
+        ]
+
         return DetectionHistoryResponse(
-            total=0,
-            page=skip // limit + 1,
+            total=history_data["total"],
+            page=skip // limit + 1 if limit > 0 else 1,
             page_size=limit,
-            total_pages=0,
-            records=[],
+            total_pages=(history_data["total"] + limit - 1) // limit if limit > 0 else 0,
+            records=records,
         )
 
     except Exception as e:
