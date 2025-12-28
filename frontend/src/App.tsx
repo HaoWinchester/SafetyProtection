@@ -16,6 +16,10 @@ const BatchDetection = lazy(() => import('./pages/Detection/Batch'))
 const Analysis = lazy(() => import('./pages/Analysis/index'))
 const Monitor = lazy(() => import('./pages/Monitor/index'))
 const Settings = lazy(() => import('./pages/Settings/index'))
+const EvaluationConfig = lazy(() => import('./pages/Evaluation/Config'))
+const EvaluationExecute = lazy(() => import('./pages/Evaluation/Execute'))
+const EvaluationTestCases = lazy(() => import('./pages/Evaluation/TestCases'))
+const EvaluationResults = lazy(() => import('./pages/Evaluation/Results'))
 
 // 加载组件
 const Loading = () => (
@@ -106,6 +110,14 @@ const App: React.FC = () => {
 
               {/* 设置 */}
               <Route path="settings" element={<Settings />} />
+
+              {/* 测评管理 */}
+              <Route path="evaluation">
+                <Route path="config" element={<EvaluationConfig />} />
+                <Route path="execute" element={<EvaluationExecute />} />
+                <Route path="test-cases" element={<EvaluationTestCases />} />
+                <Route path="results" element={<EvaluationResults />} />
+              </Route>
 
               {/* 404页面 */}
               <Route

@@ -13,6 +13,10 @@ import {
   BarChartOutlined,
   MonitorOutlined,
   SettingOutlined,
+  ExperimentOutlined,
+  FileTextOutlined,
+  PlayCircleOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import Header from './Header'
@@ -43,6 +47,33 @@ const menuItems: MenuProps['items'] = [
         key: '/detection/batch',
         icon: <FileSearchOutlined />,
         label: '批量检测',
+      },
+    ],
+  },
+  {
+    key: 'evaluation',
+    icon: <ExperimentOutlined />,
+    label: '安全测评',
+    children: [
+      {
+        key: '/evaluation/config',
+        icon: <SettingOutlined />,
+        label: '测评配置',
+      },
+      {
+        key: '/evaluation/execute',
+        icon: <PlayCircleOutlined />,
+        label: '执行测评',
+      },
+      {
+        key: '/evaluation/test-cases',
+        icon: <DatabaseOutlined />,
+        label: '测试用例',
+      },
+      {
+        key: '/evaluation/results',
+        icon: <FileTextOutlined />,
+        label: '测评结果',
       },
     ],
   },
@@ -92,6 +123,9 @@ const MainLayout: React.FC = () => {
     const path = location.pathname
     if (path.startsWith('/detection')) {
       return ['detection']
+    }
+    if (path.startsWith('/evaluation')) {
+      return ['evaluation']
     }
     return []
   }
