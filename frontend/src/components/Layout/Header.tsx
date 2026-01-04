@@ -1,24 +1,24 @@
 /**
  * 页面头部组件
- * Header component
+ * Header component with authentication
  */
 
-import React, { useState } from 'react'
-import { Layout, Menu, Button, Dropdown, Avatar, Space, Typography } from 'antd'
+import React from 'react'
+import { Layout, Button, Dropdown, Avatar, Space, Typography, message, Badge } from 'antd'
 import {
   DashboardOutlined,
   SafetyOutlined,
-  FileTextOutlined,
-  MonitorOutlined,
   SettingOutlined,
   UserOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   BellOutlined,
+  ShoppingCartOutlined,
 } from '@ant-design/icons'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import type { MenuProps } from 'antd'
+import { authService } from '../../services/auth'
 
 const { Header: AntHeader } = Layout
 const { Text } = Typography
@@ -31,17 +31,34 @@ const Header: React.FC<{
   onToggle: () => void
 }> = ({ collapsed, onToggle }) => {
   const navigate = useNavigate()
-  const location = useLocation()
+  const [quotaInfo, setQuotaInfo] = React.useState<any>(null)
+
+  // Fetch quota info
+  React.useEffect(() => {
+    if (authService.isAuthenticated()) {
+      authService.getQuotaInfo().then(setQuotaInfo).catch(() => {})
+    }
+  }, [])
+
+  const user = authService.getCurrentUser()
+  const isAuthenticated = authService.isAuthenticated()
 
   /**
    * 用户菜单
    */
-  const userMenuItems: MenuProps['items'] = [
+  const userMenuItems: MenuProps['items'] = isAuthenticated ? [
     {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: '个人资料',
+      key: 'dashboard',
+      icon: <DashboardOutlined />,
+      label: '我的仪表板',
+      onClick: () => navigate('/user-dashboard'),
     },
+    ...(user?.role === 'admin' ? [{
+      key: 'admin',
+      icon: <SettingOutlined />,
+      label: '管理控制台',
+      onClick: () => navigate('/admin-dashboard'),
+    }] : []),
     {
       key: 'settings',
       icon: <SettingOutlined />,
@@ -56,6 +73,18 @@ const Header: React.FC<{
       icon: <LogoutOutlined />,
       label: '退出登录',
       danger: true,
+      onClick: () => {
+        authService.logout()
+        message.success('已退出登录')
+        navigate('/login')
+      },
+    },
+  ] : [
+    {
+      key: 'login',
+      icon: <UserOutlined />,
+      label: '登录',
+      onClick: () => navigate('/login'),
     },
   ]
 
@@ -91,27 +120,46 @@ const Header: React.FC<{
       {/* 左侧 */}
       <Space size="large">
         {/* 折叠按钮 */}
-        <Button
-          type="text"
-          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-          onClick={onToggle}
-          style={{
-            color: 'white',
-            fontSize: 16,
-          }}
-        />
+        {isAuthenticated && (
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={onToggle}
+            style={{
+              color: 'white',
+              fontSize: 16,
+            }}
+          />
+        )}
 
         {/* Logo */}
-        <Space>
+        <Space
+          style={{ cursor: 'pointer' }}
+          onClick={() => navigate(isAuthenticated ? '/dashboard' : '/')}
+        >
           <SafetyOutlined style={{ fontSize: 24, color: '#1890ff' }} />
           <Text style={{ color: 'white', fontSize: 18, fontWeight: 600 }}>
-            LLM安全检测工具
+            幻谱安全检测
           </Text>
         </Space>
       </Space>
 
       {/* 右侧 */}
       <Space size="middle">
+        {/* 配额信息 (仅登录用户) */}
+        {isAuthenticated && quotaInfo && (
+          <Badge count={quotaInfo.remaining_quota} overflowCount={9999}>
+            <Button
+              type="text"
+              icon={<ShoppingCartOutlined />}
+              style={{ color: 'white' }}
+              onClick={() => navigate('/user-dashboard')}
+            >
+              配额
+            </Button>
+          </Badge>
+        )}
+
         {/* 通知 */}
         <Dropdown menu={{ items: notificationMenuItems }} placement="bottomRight">
           <Button type="text" icon={<BellOutlined />} style={{ color: 'white' }} />
@@ -121,7 +169,12 @@ const Header: React.FC<{
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
           <Space style={{ cursor: 'pointer' }}>
             <Avatar icon={<UserOutlined />} />
-            <Text style={{ color: 'white' }}>管理员</Text>
+            <Text style={{ color: 'white' }}>
+              {isAuthenticated ? user?.username : '未登录'}
+            </Text>
+            {isAuthenticated && user?.role === 'admin' && (
+              <Badge count="管理员" style={{ backgroundColor: '#f5222d' }} />
+            )}
           </Space>
         </Dropdown>
       </Space>

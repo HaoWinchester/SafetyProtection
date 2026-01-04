@@ -29,9 +29,11 @@ import {
   SecurityScanOutlined,
   BellOutlined,
   DatabaseOutlined,
+  BookOutlined,
+  CopyOutlined,
 } from '@ant-design/icons'
 
-const { Title, Text } = Typography
+const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
 const { Option } = Select
 const { TextArea } = Input
@@ -420,6 +422,115 @@ const Settings: React.FC = () => {
     )
   }
 
+  /**
+   * 渲染API文档
+   */
+  const renderApiDocs = () => {
+    return (
+      <div>
+        <Alert
+          message="API使用文档"
+          description="本文档提供API接口的详细说明和使用示例"
+          type="info"
+          showIcon
+          style={{ marginBottom: 24 }}
+        />
+
+        <Card title="快速开始" style={{ marginBottom: 16 }}>
+          <Paragraph>
+            1. 注册账号或使用已有账号登录<br/>
+            2. 获取访问令牌 (access_token)<br/>
+            3. 在请求头中添加 Authorization: Bearer YOUR_ACCESS_TOKEN<br/>
+            4. 调用检测 API
+          </Paragraph>
+        </Card>
+
+        <Card title="检测API" style={{ marginBottom: 16 }}>
+          <Title level={5}>实时检测接口</Title>
+          <Paragraph>
+            <Text strong>接口地址:</Text> <Text code>POST /api/v1/detection/detect</Text><br/>
+            <Text strong>认证:</Text> <Text type="secondary">必需</Text>
+          </Paragraph>
+
+          <Title level={5}>请求参数</Title>
+          <Paragraph>
+            <Text code>prompt</Text> (string, 必需): 待检测的提示词内容
+          </Paragraph>
+
+          <Title level={5}>请求示例 (cURL)</Title>
+          <div style={{
+            background: '#f6f8fa',
+            padding: 16,
+            borderRadius: 6,
+            position: 'relative',
+            marginBottom: 16
+          }}>
+            <pre style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>
+              <code>{'curl -X POST "http://localhost:8000/api/v1/detection/detect" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\\n  -d \'{\n    "prompt": "你的提示词内容"\\n  }\''}</code>
+            </pre>
+          </div>
+
+          <Title level={5}>响应示例</Title>
+          <div style={{
+            background: '#f6f8fa',
+            padding: 16,
+            borderRadius: 6
+          }}>
+            <pre style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>
+              <code>{'{\n  "is_compliant": false,\n  "risk_score": 0.85,\n  "risk_level": "high",\n  "threat_category": "prompt_injection",\n  "recommendation": "block"\n}'}</code>
+            </pre>
+          </div>
+        </Card>
+
+        <Card title="认证API" style={{ marginBottom: 16 }}>
+          <Title level={5}>用户注册</Title>
+          <Paragraph>
+            <Text strong>接口地址:</Text> <Text code>POST /api/v1/auth/register</Text><br/>
+            <Text strong>认证:</Text> <Text type="secondary">不需要</Text>
+          </Paragraph>
+
+          <Title level={5}>用户登录</Title>
+          <Paragraph>
+            <Text strong>接口地址:</Text> <Text code>POST /api/v1/auth/login</Text><br/>
+            <Text strong>认证:</Text> <Text type="secondary">不需要</Text>
+          </Paragraph>
+
+          <Title level={5}>登录响应</Title>
+          <div style={{
+            background: '#f6f8fa',
+            padding: 16,
+            borderRadius: 6
+          }}>
+            <pre style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>
+              <code>{'{\n  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",\n  "token_type": "bearer",\n  "user": {\n    "user_id": "user_001",\n    "email": "user@example.com",\n    "role": "user"\n  }\n}'}</code>
+            </pre>
+          </div>
+        </Card>
+
+        <Card title="错误码说明">
+          <Paragraph>
+            <Text strong>200</Text> - 请求成功<br/>
+            <Text strong>400</Text> - 请求参数错误<br/>
+            <Text strong>401</Text> - 未授权，需要登录<br/>
+            <Text strong>403</Text> - 无权限访问<br/>
+            <Text strong>404</Text> - 资源不存在<br/>
+            <Text strong>429</Text> - 请求过于频繁<br/>
+            <Text strong>500</Text> - 服务器内部错误
+          </Paragraph>
+        </Card>
+
+        <Card title="完整API文档" style={{ marginTop: 16 }}>
+          <Paragraph>
+            查看 Swagger 文档获取完整的API说明:<br/>
+            <a href="http://localhost:8000/docs" target="_blank" rel="noopener noreferrer">
+              http://localhost:8000/docs
+            </a>
+          </Paragraph>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div>
       {/* 页面标题 */}
@@ -483,6 +594,23 @@ const Settings: React.FC = () => {
               <Text type="secondary">配置检测引擎的参数和规则</Text>
               <Divider />
               {renderDetectionSettings()}
+            </div>
+          </TabPane>
+
+          <TabPane
+            tab={
+              <span>
+                <BookOutlined />
+                API文档
+              </span>
+            }
+            key="api-docs"
+          >
+            <div style={{ padding: '0 24px' }}>
+              <Title level={4}>API文档</Title>
+              <Text type="secondary">API接口使用说明和示例</Text>
+              <Divider />
+              {renderApiDocs()}
             </div>
           </TabPane>
         </Tabs>

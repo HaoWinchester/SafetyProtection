@@ -3,7 +3,7 @@
  * Health check service for backend availability
  */
 
-import { get } from './api'
+import axios from 'axios'
 
 /**
  * 健康检查响应
@@ -17,6 +17,7 @@ interface HealthStatus {
 /**
  * 检查后端服务是否可用
  * 使用非常短的超时时间(2秒)快速失败
+ * 不使用apiClient，避免触发错误消息提示
  */
 export const checkBackendHealth = async (): Promise<{
   healthy: boolean
@@ -24,11 +25,15 @@ export const checkBackendHealth = async (): Promise<{
   error?: string
 }> => {
   try {
-    // 设置2秒超时，快速检测后端是否可用
-    const response = await get<HealthStatus>('/health', {}, { timeout: 2000 })
+    // 直接使用axios，不通过apiClient，避免显示错误消息
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+    const response = await axios.get<HealthStatus>(
+      `${API_BASE_URL}/health`,
+      { timeout: 2000 }
+    )
     return {
       healthy: true,
-      status: response,
+      status: response.data,
     }
   } catch (error: any) {
     return {

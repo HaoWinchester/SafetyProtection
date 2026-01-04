@@ -17,6 +17,9 @@ import {
   FileTextOutlined,
   PlayCircleOutlined,
   DatabaseOutlined,
+  UserOutlined,
+  TeamOutlined,
+  BookOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import Header from './Header'
@@ -39,7 +42,7 @@ const menuItems: MenuProps['items'] = [
     label: '安全检测',
     children: [
       {
-        key: '/detection/realtime',
+        key: '/detection',
         icon: <ScanOutlined />,
         label: '实时检测',
       },
@@ -88,6 +91,23 @@ const menuItems: MenuProps['items'] = [
     label: '系统监控',
   },
   {
+    key: 'user',
+    icon: <UserOutlined />,
+    label: '用户中心',
+    children: [
+      {
+        key: '/user-dashboard',
+        icon: <UserOutlined />,
+        label: '我的仪表板',
+      },
+      {
+        key: '/admin-dashboard',
+        icon: <TeamOutlined />,
+        label: '管理控制台',
+      },
+    ],
+  },
+  {
     key: '/settings',
     icon: <SettingOutlined />,
     label: '系统设置',
@@ -112,6 +132,8 @@ const MainLayout: React.FC = () => {
       setOpenKeys(['detection'])
     } else if (path.startsWith('/evaluation')) {
       setOpenKeys(['evaluation'])
+    } else if (path.startsWith('/user-dashboard') || path.startsWith('/admin-dashboard')) {
+      setOpenKeys(['user'])
     } else {
       setOpenKeys([])
     }

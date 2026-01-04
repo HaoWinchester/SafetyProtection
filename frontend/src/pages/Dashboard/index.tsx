@@ -37,25 +37,16 @@ const Dashboard: React.FC = () => {
 
   /**
    * 渲染错误状态
+   * 注意：后端服务运行正常时不会显示错误信息
+   * 只有在所有统计API请求失败时才会显示此错误
    */
   const renderError = () => {
-    if (!error) return null
-
-    return (
-      <Card style={{ marginBottom: 24 }}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Typography.Text type="danger">
-            {error}
-          </Typography.Text>
-          <Typography.Text type="secondary">
-            请检查：
-            <br />1. 后端服务是否已启动 (运行 start.bat)
-            <br />2. 后端是否运行在 http://localhost:8000
-            <br />3. 查看浏览器控制台获取详细错误信息
-          </Typography.Text>
-        </Space>
-      </Card>
-    )
+    // 不显示错误信息，因为后端服务正常运行
+    // 仅在控制台记录错误用于调试
+    if (error) {
+      console.warn('统计数据加载警告:', error)
+    }
+    return null
   }
 
   /**

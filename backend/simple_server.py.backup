@@ -3,16 +3,13 @@
 用于快速启动和演示
 包含数据库连接和完整API
 """
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timedelta
 from typing import Optional, List
 import uvicorn
 import random
 import time
-import uuid
-import hashlib
 from pydantic import BaseModel
 
 # 创建应用
@@ -45,15 +42,6 @@ async def health():
     return {
         "status": "healthy",
         "service": "backend-api"
-    }
-
-@app.get("/api/v1/health")
-async def health_v1():
-    return {
-        "status": "healthy",
-        "service": "backend-api",
-        "version": "1.0.0",
-        "timestamp": datetime.now().isoformat()
     }
 
 # 配置接口
@@ -728,357 +716,77 @@ async def export_evaluation_report(evaluation_id: str, format: str = "json"):
     else:
         raise HTTPException(status_code=400, detail="不支持的格式，请使用 json 或 csv")
 
-# ===== 认证系统 =====
+# ===== 认证API端点 =====
+# 导入认证API扩展
+import sys
+sys.path.insert(0, '/Users/menghao/Documents/幻谱/大模型安全检测工具/SafetyProtection/backend')
 
-# 安全认证
-security = HTTPBearer()
-
-# 内存数据库 (生产环境应使用真实数据库)
-users_db = {}
-orders_db = {}
-packages_db = {}
-detection_usage_db = []
-
-# 初始化默认管理员用户
-def init_default_data():
-    """初始化默认数据"""
-    # 默认管理员
-    admin_id = "user_admin001"
-    if admin_id not in users_db:
-        users_db[admin_id] = {
-            "user_id": admin_id,
-            "email": "admin@example.com",
-            "username": "admin",
-            "hashed_password": hashlib.sha256("admin123".encode()).hexdigest(),
-            "full_name": "系统管理员",
-            "role": "admin",
-            "is_active": True,
-            "is_verified": True,
-            "remaining_quota": 10000,
-            "total_quota": 10000,
-            "created_at": datetime.now().isoformat(),
-            "last_login_at": None
-        }
-
-    # 默认普通用户
-    user_id = "user_test001"
-    if user_id not in users_db:
-        users_db[user_id] = {
-            "user_id": user_id,
-            "email": "user@example.com",
-            "username": "testuser",
-            "hashed_password": hashlib.sha256("test123".encode()).hexdigest(),
-            "full_name": "测试用户",
-            "role": "user",
-            "is_active": True,
-            "is_verified": True,
-            "remaining_quota": 50,
-            "total_quota": 50,
-            "created_at": datetime.now().isoformat(),
-            "last_login_at": None
-        }
-
-    # 默认套餐
-    if not packages_db:
-        packages_db["package_basic"] = {
-            "package_id": "package_basic",
-            "package_name": "基础套餐",
-            "quota_amount": 2000,
-            "price": 15.0,
-            "discount": 0.0,
-            "description": "适合个人用户和小团队",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
-        packages_db["package_standard"] = {
-            "package_id": "package_standard",
-            "package_name": "标准套餐",
-            "quota_amount": 4500,
-            "price": 30.0,
-            "discount": 0.0,
-            "description": "适合中小型企业",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
-        packages_db["package_pro"] = {
-            "package_id": "package_pro",
-            "package_name": "专业套餐",
-            "quota_amount": 10000,
-            "price": 60.0,
-            "discount": 0.0,
-            "description": "适合大型团队和项目",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
-        packages_db["package_enterprise"] = {
-            "package_id": "package_enterprise",
-            "package_name": "企业套餐",
-            "quota_amount": 50000,
-            "price": 250.0,
-            "discount": 0.0,
-            "description": "适合大型企业和组织",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
-
-# 初始化数据
-init_default_data()
-
-# Pydantic schemas for authentication
-class UserCreate(BaseModel):
-    email: str
-    username: str
-    password: str
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-    company: Optional[str] = None
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class OrderCreate(BaseModel):
-    package_id: str
-    payment_method: Optional[str] = None
-
-# 辅助函数
-def create_access_token(data: dict):
-    """创建JWT Token"""
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=30)
-    to_encode.update({"exp": expire})
-    # 简化的token生成 (生产环境应使用JWT库)
-    import base64
-    token_str = f"{to_encode['sub']}:{expire.timestamp()}"
-    token = base64.b64encode(token_str.encode()).decode()
-    return f"Bearer {token}"
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """获取当前用户"""
-    token = credentials.credentials
-
-    # 简化的token验证 (生产环境应使用JWT库)
-    try:
-        import base64
-        decoded = base64.b64decode(token.replace("Bearer ", "").encode()).decode()
-        user_id = decoded.split(":")[0]
-
-        if user_id not in users_db:
-            raise HTTPException(status_code=401, detail="User not found")
-
-        user = users_db[user_id]
-        if not user["is_active"]:
-            raise HTTPException(status_code=403, detail="User is disabled")
-
-        return user
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+# 导入认证API函数
+from auth_api_extension import (
+    register_user_endpoint,
+    login_user_endpoint,
+    get_me_endpoint,
+    get_quota_endpoint,
+    get_packages_endpoint,
+    create_order_endpoint,
+    pay_order_endpoint,
+    get_orders_endpoint,
+    get_all_users_endpoint,
+    update_user_quota_endpoint,
+    UserCreate,
+    UserLogin,
+    OrderCreate
+)
 
 @app.post("/api/v1/auth/register", response_model=dict)
 async def register_user(user_data: UserCreate):
     """用户注册"""
-    # 检查邮箱是否已存在
-    for user in users_db.values():
-        if user["email"] == user_data.email:
-            raise HTTPException(status_code=400, detail="邮箱已被注册")
-        if user["username"] == user_data.username:
-            raise HTTPException(status_code=400, detail="用户名已被占用")
-
-    # 创建新用户
-    user_id = f"user_{uuid.uuid4().hex[:16]}"
-    new_user = {
-        "user_id": user_id,
-        "email": user_data.email,
-        "username": user_data.username,
-        "hashed_password": hashlib.sha256(user_data.password.encode()).hexdigest(),
-        "full_name": user_data.full_name,
-        "phone": user_data.phone,
-        "company": user_data.company,
-        "role": "user",
-        "is_active": True,
-        "is_verified": False,
-        "remaining_quota": 10,  # 赠送10次免费配额
-        "total_quota": 10,
-        "created_at": datetime.now().isoformat(),
-        "last_login_at": None
-    }
-
-    users_db[user_id] = new_user
-
-    # 生成token
-    access_token = create_access_token({"sub": user_id})
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": new_user
-    }
+    return await register_user_endpoint(user_data)
 
 @app.post("/api/v1/auth/login", response_model=dict)
 async def login_user(credentials: UserLogin):
     """用户登录"""
-    # 查找用户
-    user = None
-    for u in users_db.values():
-        if u["username"] == credentials.username or u["email"] == credentials.username:
-            user = u
-            break
+    return await login_user_endpoint(credentials)
 
-    if not user:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
-
-    # 验证密码
-    password_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
-    if user["hashed_password"] != password_hash:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
-
-    if not user["is_active"]:
-        raise HTTPException(status_code=403, detail="用户已被禁用")
-
-    # 更新最后登录时间
-    user["last_login_at"] = datetime.now().isoformat()
-
-    # 生成token
-    access_token = create_access_token({"sub": user["user_id"]})
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": user
-    }
-
-@app.get("/api/v1/auth/me")
-async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+@app.get("/api/v1/auth/me", response_model=dict)
+async def get_me():
     """获取当前用户信息"""
-    return current_user
+    return await get_me_endpoint()
 
-@app.get("/api/v1/auth/quota")
-async def get_quota_info(current_user: dict = Depends(get_current_user)):
+@app.get("/api/v1/auth/quota", response_model=dict)
+async def get_quota():
     """获取配额信息"""
-    used_quota = current_user["total_quota"] - current_user["remaining_quota"]
-    quota_percentage = (used_quota / current_user["total_quota"] * 100) if current_user["total_quota"] > 0 else 0
+    return await get_quota_endpoint()
 
-    return {
-        "remaining_quota": current_user["remaining_quota"],
-        "total_quota": current_user["total_quota"],
-        "used_quota": used_quota,
-        "quota_percentage": round(quota_percentage, 2)
-    }
-
-@app.get("/api/v1/auth/packages")
+@app.get("/api/v1/auth/packages", response_model=list)
 async def get_packages(is_active: bool = True):
     """获取套餐列表"""
-    packages = [pkg for pkg in packages_db.values() if pkg["is_active"] == is_active]
-    return packages
+    return await get_packages_endpoint(is_active)
 
-@app.post("/api/v1/auth/orders")
-async def create_order(order_data: OrderCreate, current_user: dict = Depends(get_current_user)):
+@app.post("/api/v1/auth/orders", response_model=dict)
+async def create_order(order_data: OrderCreate):
     """创建订单"""
-    package = packages_db.get(order_data.package_id)
-    if not package:
-        raise HTTPException(status_code=404, detail="套餐不存在")
+    return await create_order_endpoint(order_data)
 
-    if not package["is_active"]:
-        raise HTTPException(status_code=400, detail="套餐已下架")
-
-    order_id = f"order_{uuid.uuid4().hex[:16]}"
-    new_order = {
-        "order_id": order_id,
-        "user_id": current_user["user_id"],
-        "package_name": package["package_name"],
-        "quota_amount": package["quota_amount"],
-        "price": package["price"],
-        "status": "pending",
-        "payment_method": order_data.payment_method,
-        "paid_at": None,
-        "created_at": datetime.now().isoformat()
-    }
-
-    orders_db[order_id] = new_order
-
-    return new_order
-
-@app.post("/api/v1/auth/orders/{order_id}/pay")
-async def pay_order(order_id: str, current_user: dict = Depends(get_current_user)):
+@app.post("/api/v1/auth/orders/{order_id}/pay", response_model=dict)
+async def pay_order(order_id: str):
     """支付订单"""
-    order = orders_db.get(order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="订单不存在")
+    return await pay_order_endpoint(order_id)
 
-    if order["user_id"] != current_user["user_id"]:
-        raise HTTPException(status_code=403, detail="无权操作此订单")
-
-    if order["status"] == "paid":
-        raise HTTPException(status_code=400, detail="订单已支付")
-
-    # 模拟支付成功
-    order["status"] = "paid"
-    order["paid_at"] = datetime.now().isoformat()
-    order["transaction_id"] = f"txn_{uuid.uuid4().hex[:16]}"
-
-    # 增加用户配额
-    current_user["remaining_quota"] += order["quota_amount"]
-    current_user["total_quota"] += order["quota_amount"]
-
-    return {
-        "message": "支付成功",
-        "order_id": order_id,
-        "quota_added": order["quota_amount"],
-        "new_balance": current_user["remaining_quota"]
-    }
-
-@app.get("/api/v1/auth/orders")
-async def get_orders(page: int = 1, page_size: int = 10, current_user: dict = Depends(get_current_user)):
+@app.get("/api/v1/auth/orders", response_model=dict)
+async def get_orders(page: int = 1, page_size: int = 10):
     """获取订单列表"""
-    user_orders = [order for order in orders_db.values() if order["user_id"] == current_user["user_id"]]
+    return await get_orders_endpoint(page, page_size)
 
-    # 分页
-    start = (page - 1) * page_size
-    end = start + page_size
-    paginated_orders = user_orders[start:end]
-
-    return {
-        "orders": paginated_orders,
-        "total": len(user_orders),
-        "page": page,
-        "page_size": page_size
-    }
-
-@app.get("/api/v1/auth/admin/users")
-async def get_all_users(current_user: dict = Depends(get_current_user)):
+@app.get("/api/v1/auth/admin/users", response_model=list)
+async def get_all_users():
     """获取所有用户 (管理员)"""
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return await get_all_users_endpoint()
 
-    return list(users_db.values())
-
-@app.patch("/api/v1/auth/admin/users/{user_id}/quota")
-async def update_user_quota(
-    user_id: str,
-    quota_update: dict,
-    current_user: dict = Depends(get_current_user)
-):
+@app.patch("/api/v1/auth/admin/users/{user_id}/quota", response_model=dict)
+async def update_user_quota(user_id: str, quota_update: dict):
     """更新用户配额 (管理员)"""
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-
-    user = users_db.get(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-
-    amount = quota_update.get("amount", 0)
-    user["remaining_quota"] += amount
-    user["total_quota"] += amount
-
-    return {
-        "message": "配额更新成功",
-        "user_id": user_id,
-        "amount_added": amount,
-        "new_balance": user["remaining_quota"],
-        "reason": quota_update.get("reason", "")
-    }
+    return await update_user_quota_endpoint(user_id, quota_update)
 
 if __name__ == "__main__":
     print("=" * 50)

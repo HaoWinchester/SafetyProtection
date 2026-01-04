@@ -1,20 +1,25 @@
 /**
  * 主应用组件
- * Main application component with routing
+ * Main application component with routing and authentication
  */
 
 import React, { Suspense, lazy, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { Spin, message } from 'antd'
+import { Spin } from 'antd'
 import { ConfigProvider, theme } from 'antd'
 import MainLayout from './components/Layout/MainLayout'
 import { checkBackendHealthWithCache } from './services/healthService'
+import PrivateRoute from './components/Common/PrivateRoute'
 
 // 直接导入关键页面组件（不懒加载，避免切换时闪烁）
 import Dashboard from './pages/Dashboard/index'
 import Analysis from './pages/Analysis/index'
 import Monitor from './pages/Monitor/index'
 import Settings from './pages/Settings/index'
+import Login from './pages/Login/index'
+import UserDashboard from './pages/UserDashboard/index'
+import AdminDashboard from './pages/AdminDashboard/index'
+// import ApiDocs from './pages/ApiDocs/index'
 
 // 懒加载较大的页面组件
 const RealtimeDetection = lazy(() => import('./pages/Detection/Realtime'))
@@ -109,77 +114,137 @@ const App: React.FC = () => {
       >
         <Suspense fallback={<InlineLoading />}>
           <Routes>
+            {/* 登录页面 - 不需要布局 */}
+            <Route path="/login" element={<Login />} />
+
+            {/* 主应用路由 - 需要认证 */}
             <Route path="/" element={<MainLayout />}>
               {/* 默认重定向到仪表盘 */}
               <Route index element={<Navigate to="/dashboard" replace />} />
 
-              {/* 仪表盘 - 直接导入，无加载延迟 */}
-              <Route path="dashboard" element={<Dashboard />} />
+              {/* 仪表盘 - 需要认证 */}
+              <Route
+                path="dashboard"
+                element={
+                  <PrivateRoute>
+                    <Dashboard />
+                  </PrivateRoute>
+                }
+              />
 
-              {/* 检测功能 - 懒加载 */}
-              <Route path="detection">
-                <Route
-                  path="realtime"
-                  element={
+              {/* 检测功能 - 需要认证, 懒加载 */}
+              <Route
+                path="detection"
+                element={
+                  <PrivateRoute>
                     <Suspense fallback={<InlineLoading />}>
                       <RealtimeDetection />
                     </Suspense>
-                  }
-                />
-                <Route
-                  path="batch"
-                  element={
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="detection/batch"
+                element={
+                  <PrivateRoute>
                     <Suspense fallback={<InlineLoading />}>
                       <BatchDetection />
                     </Suspense>
-                  }
-                />
-              </Route>
+                  </PrivateRoute>
+                }
+              />
 
-              {/* 分析 - 直接导入 */}
-              <Route path="analysis" element={<Analysis />} />
+              {/* 分析 - 需要认证 */}
+              <Route
+                path="analysis"
+                element={
+                  <PrivateRoute>
+                    <Analysis />
+                  </PrivateRoute>
+                }
+              />
 
-              {/* 监控 - 直接导入 */}
-              <Route path="monitor" element={<Monitor />} />
+              {/* 监控 - 需要认证 */}
+              <Route
+                path="monitor"
+                element={
+                  <PrivateRoute>
+                    <Monitor />
+                  </PrivateRoute>
+                }
+              />
 
-              {/* 设置 - 直接导入 */}
-              <Route path="settings" element={<Settings />} />
+              {/* 设置 - 需要认证 */}
+              <Route
+                path="settings"
+                element={
+                  <PrivateRoute>
+                    <Settings />
+                  </PrivateRoute>
+                }
+              />
 
-              {/* 测评管理 - 懒加载 */}
-              <Route path="evaluation">
-                <Route
-                  path="config"
-                  element={
+              {/* 用户仪表板 - 需要认证 */}
+              <Route
+                path="user-dashboard"
+                element={
+                  <PrivateRoute>
+                    <UserDashboard />
+                  </PrivateRoute>
+                }
+              />
+
+              {/* 管理员仪表板 - 需要管理员权限 */}
+              <Route
+                path="admin-dashboard"
+                element={
+                  <PrivateRoute requireAdmin={true}>
+                    <AdminDashboard />
+                  </PrivateRoute>
+                }
+              />
+
+              {/* 测评管理 - 需要认证, 懒加载 */}
+              <Route
+                path="evaluation/config"
+                element={
+                  <PrivateRoute>
                     <Suspense fallback={<InlineLoading />}>
                       <EvaluationConfig />
                     </Suspense>
-                  }
-                />
-                <Route
-                  path="execute"
-                  element={
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="evaluation/execute"
+                element={
+                  <PrivateRoute>
                     <Suspense fallback={<InlineLoading />}>
                       <EvaluationExecute />
                     </Suspense>
-                  }
-                />
-                <Route
-                  path="test-cases"
-                  element={
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="evaluation/test-cases"
+                element={
+                  <PrivateRoute>
                     <Suspense fallback={<InlineLoading />}>
                       <EvaluationTestCases />
                     </Suspense>
-                  }
-                />
-                <Route
-                  path="results"
-                  element={
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="evaluation/results"
+                element={
+                  <PrivateRoute>
                     <Suspense fallback={<InlineLoading />}>
                       <EvaluationResults />
                     </Suspense>
-                  }
-                />
-              </Route>
+                  </PrivateRoute>
+                }
+              />
 
               {/* 404页面 */}
               <Route
