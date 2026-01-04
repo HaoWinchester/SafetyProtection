@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>路由测试</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+        .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
+        .success { color: #52c41a; }
+        .error { color: #ff4d4f; }
+        button { background: #1890ff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 路由测试工具</h1>
+
+    <div class="card">
+        <h2>步骤1: 登录获取Token</h2>
+        <button onclick="login()">登录 (testuser/test123)</button>
+        <div id="login-status"></div>
+    </div>
+
+    <div class="card">
+        <h2>步骤2: 保存Token并测试路由</h2>
+        <button onclick="saveToken()">保存Token</button>
+        <button onclick="testRoute('/usercenter/projects')">测试 /usercenter/projects</button>
+        <button onclick="testRoute('/usercenter/bills')">测试 /usercenter/bills</button>
+        <div id="route-status"></div>
+    </div>
+
+    <div class="card">
+        <h2>步骤3: 跳转到应用</h2>
+        <button onclick="goToApp()">前往应用主页</button>
+        <button onclick="goToProjects()">直接前往Projects页面</button>
+        <button onclick="goToDebug()">前往诊断工具</button>
+    </div>
+
+    <div class="card">
+        <h2>当前状态</h2>
+        <div id="current-status">
+            <p>Token: <span id="token-status">未设置</span></p>
+            <p>UserInfo: <span id="user-status">未设置</span></p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        function updateStatus() {
+            const token = localStorage.getItem('access_token');
+            const user = localStorage.getItem('user_info');
+
+            document.getElementById('token-status').textContent = token ? '已设置' : '未设置';
+            document.getElementById('token-status').className = token ? 'success' : 'error';
+            document.getElementById('user-status').textContent = user ? '已设置' : '未设置';
+            document.getElementById('user-status').className = user ? 'success' : 'error';
+        }
+
+        async function login() {
+            const status = document.getElementById('login-status');
+            status.innerHTML = '<p class="info">登录中...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: 'testuser',
+                        password: 'test123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    status.innerHTML = `<p class="success">✅ 登录成功!</p><p>用户: ${data.user.username}</p>`;
+                    window.tempToken = data.access_token;
+                    window.tempUser = data.user;
+                } else {
+                    status.innerHTML = `<p class="error">❌ 登录失败: ${data.detail}</p>`;
+                }
+            } catch (error) {
+                status.innerHTML = `<p class="error">❌ 错误: ${error.message}</p>`;
+            }
+        }
+
+        function saveToken() {
+            if (window.tempToken && window.tempUser) {
+                localStorage.setItem('access_token', window.tempToken);
+                localStorage.setItem('user_info', JSON.stringify(window.tempUser));
+                updateStatus();
+                alert('Token已保存!');
+            } else {
+                alert('请先登录!');
+            }
+        }
+
+        async function testRoute(path) {
+            const status = document.getElementById('route-status');
+            const token = localStorage.getItem('access_token');
+
+            if (!token) {
+                status.innerHTML = '<p class="error">❌ 请先登录并保存Token!</p>';
+                return;
+            }
+
+            status.innerHTML = `<p class="info">测试路由: ${path}</p>`;
+
+            // 测试API是否可访问
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/user/projects`, {
+                    headers: { 'Authorization': token }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    status.innerHTML += `<p class="success">✅ API正常 (获取到 ${data.length} 个API Keys)</p>`;
+                } else {
+                    status.innerHTML += `<p class="error">❌ API返回 ${response.status}</p>`;
+                }
+            } catch (error) {
+                status.innerHTML += `<p class="error">❌ API错误: ${error.message}</p>`;
+            }
+
+            status.innerHTML += `<p class="info">现在可以尝试跳转到: <a href="${path}" target="_blank">${path}</a></p>`;
+        }
+
+        function goToApp() {
+            window.location.href = '/';
+        }
+
+        function goToProjects() {
+            window.location.href = '/usercenter/projects';
+        }
+
+        function goToDebug() {
+            window.location.href = '/debug.html';
+        }
+
+        window.onload = updateStatus;
+    </script>
+</body>
+</html>

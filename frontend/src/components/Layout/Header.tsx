@@ -42,18 +42,28 @@ const Header: React.FC<{
 
   const user = authService.getCurrentUser()
   const isAuthenticated = authService.isAuthenticated()
+  const isAdmin = authService.isAdmin()
 
   /**
-   * 用户菜单
+   * 用户菜单 - 根据角色动态生成
    */
   const userMenuItems: MenuProps['items'] = isAuthenticated ? [
-    {
+    // 用户中心 - 仅普通用户可见
+    ...(!isAdmin ? [{
+      key: 'usercenter',
+      icon: <UserOutlined />,
+      label: '用户中心',
+      onClick: () => navigate('/usercenter'),
+    }] : []),
+    // 我的仪表板 - 仅普通用户可见
+    ...(!isAdmin ? [{
       key: 'dashboard',
       icon: <DashboardOutlined />,
       label: '我的仪表板',
       onClick: () => navigate('/user-dashboard'),
-    },
-    ...(user?.role === 'admin' ? [{
+    }] : []),
+    // 管理控制台 - 仅管理员可见
+    ...(isAdmin ? [{
       key: 'admin',
       icon: <SettingOutlined />,
       label: '管理控制台',

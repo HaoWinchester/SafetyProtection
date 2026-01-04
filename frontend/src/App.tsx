@@ -19,6 +19,23 @@ import Settings from './pages/Settings/index'
 import Login from './pages/Login/index'
 import UserDashboard from './pages/UserDashboard/index'
 import AdminDashboard from './pages/AdminDashboard/index'
+import UserCenter from './pages/UserCenter/index'
+import UserCenterProjects from './pages/UserCenter/Projects/index'
+import UserCenterBills from './pages/UserCenter/Bills/index'
+import UserCenterVerify from './pages/UserCenter/Verify/index'
+import UserCenterProfile from './pages/UserCenter/Profile/index'
+import UserCenterAccount from './pages/UserCenter/Account/index'
+import UserCenterAuth from './pages/UserCenter/Auth/index'
+import UserCenterSubscription from './pages/UserCenter/Subscription/index'
+import UserCenterPackages from './pages/UserCenter/Packages/index'
+import UserCenterUsage from './pages/UserCenter/Usage/index'
+import UserCenterBenefits from './pages/UserCenter/Benefits/index'
+import UserCenterTickets from './pages/UserCenter/Tickets/index'
+import UserCenterApiCalls from './pages/UserCenter/ApiCalls/index'
+import UserCenterBilling from './pages/UserCenter/Billing/index'
+import UserCenterInvoice from './pages/UserCenter/Invoice/index'
+import UserCenterRecharge from './pages/UserCenter/Recharge/index'
+import Help from './pages/Help/index'
 // import ApiDocs from './pages/ApiDocs/index'
 
 // 懒加载较大的页面组件
@@ -190,6 +207,146 @@ const App: React.FC = () => {
                 element={
                   <PrivateRoute>
                     <UserDashboard />
+                  </PrivateRoute>
+                }
+              />
+
+              {/* 用户中心 - 仅普通用户可访问 */}
+              <Route
+                path="usercenter"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenter />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/projects"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterProjects />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/apicalls"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterApiCalls />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/billing"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterBilling />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/invoice"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterInvoice />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/recharge"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterRecharge />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/bills"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterBills />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/verify"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterVerify />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/profile"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterProfile />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/account"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterAccount />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/auth"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterAuth />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/subscription"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterSubscription />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/packages"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterPackages />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/usage"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterUsage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/benefits"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterBenefits />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="usercenter/tickets"
+                element={
+                  <PrivateRoute requireUser={true}>
+                    <UserCenterTickets />
+                  </PrivateRoute>
+                }
+              />
+
+              {/* 帮助中心 - 所有用户可访问 */}
+              <Route
+                path="help"
+                element={
+                  <PrivateRoute>
+                    <Help />
                   </PrivateRoute>
                 }
               />

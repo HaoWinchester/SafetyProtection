@@ -10,9 +10,14 @@ import { authService } from '../../services/auth';
 interface PrivateRouteProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  requireUser?: boolean; // 新增: 要求是普通用户(非管理员)
 }
 
-const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requireAdmin = false }) => {
+const PrivateRoute: React.FC<PrivateRouteProps> = ({
+  children,
+  requireAdmin = false,
+  requireUser = false
+}) => {
   const location = useLocation();
 
   // Check authentication status
@@ -44,6 +49,11 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children, requireAdmin = fa
   // Redirect to dashboard if not admin but trying to access admin route
   if (requireAdmin && !isAdmin) {
     return <Navigate to="/dashboard" replace />;
+  }
+
+  // Redirect to dashboard if admin trying to access user-only route
+  if (requireUser && isAdmin) {
+    return <Navigate to="/admin-dashboard" replace />;
   }
 
   return <>{children}</>;

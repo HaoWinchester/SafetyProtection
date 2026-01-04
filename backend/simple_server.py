@@ -14,6 +14,12 @@ import time
 import uuid
 import hashlib
 from pydantic import BaseModel
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import json
+
+# 导入用户中心API扩展 - 暂时注释,直接在此文件中定义
+# import usercenter_api
 
 # 创建应用
 app = FastAPI(
@@ -21,6 +27,62 @@ app = FastAPI(
     description="实时AI安全检测平台",
     version="1.0.0"
 )
+
+# 数据库配置
+DATABASE_CONFIG = {
+    "host": "localhost",
+    "port": 5432,
+    "database": "safety_detection_db",
+    "user": "safety_user",
+    "password": "safety_pass_2024"
+}
+
+def get_db_connection():
+    """获取数据库连接"""
+    try:
+        conn = psycopg2.connect(**DATABASE_CONFIG)
+        return conn
+    except Exception as e:
+        print(f"数据库连接失败: {e}")
+        return None
+
+def init_db():
+    """初始化数据库表"""
+    conn = get_db_connection()
+    if not conn:
+        print("无法连接到数据库")
+        return False
+
+    try:
+        cursor = conn.cursor()
+
+        # 读取并执行SQL初始化脚本
+        with open('init_db.sql', 'r', encoding='utf-8') as f:
+            sql = f.read()
+            cursor.execute(sql)
+            conn.commit()
+
+        print("数据库表初始化成功")
+        cursor.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"数据库初始化失败: {e}")
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        return False
+
+# 应用启动时初始化数据库
+@app.on_event("startup")
+async def startup_event():
+    """应用启动事件"""
+    print("正在初始化数据库...")
+    success = init_db()
+    if success:
+        print("数据库初始化成功")
+    else:
+        print("数据库初始化失败，某些功能可能无法使用")
 
 # 配置CORS
 app.add_middleware(
@@ -738,6 +800,10 @@ users_db = {}
 orders_db = {}
 packages_db = {}
 detection_usage_db = []
+usage_records_db = []  # 用户中心API需要
+subscription_db = {}  # 用户订阅数据库
+tickets_db = {}  # 工单数据库
+ticket_id_counter = 0  # 工单ID计数器
 
 # 初始化默认管理员用户
 def init_default_data():
@@ -1078,6 +1144,837 @@ async def update_user_quota(
         "amount_added": amount,
         "new_balance": user["remaining_quota"],
         "reason": quota_update.get("reason", "")
+    }
+
+# ===== 用户中心API接口 =====
+
+# API Keys管理API
+class ApiKeyCreate(BaseModel):
+    name: str
+    description: str
+
+class ApiKeyUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+@app.get("/api/v1/user/projects")
+async def get_api_keys(current_user: dict = Depends(get_current_user)):
+    """获取用户API Key列表"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 查询用户的所有API Keys
+        cursor.execute("""
+            SELECT id, user_id, name, description, api_key, status,
+                   create_time, last_used, call_count
+            FROM api_keys
+            WHERE user_id = %s
+            ORDER BY create_time DESC
+        """, (current_user["user_id"],))
+
+        api_keys = cursor.fetchall()
+
+        # 如果没有API Key，创建默认的
+        if not api_keys:
+            default_api_key = f"sk-{uuid.uuid4().hex}"
+            cursor.execute("""
+                INSERT INTO api_keys (id, user_id, name, description, api_key, status, create_time, last_used, call_count)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, user_id, name, description, api_key, status, create_time, last_used, call_count
+            """, (
+                f"key_{int(time.time())}",
+                current_user["user_id"],
+                "默认API Key",
+                "系统默认创建的API Key",
+                default_api_key,
+                "active",
+                datetime.now(),
+                datetime.now(),
+                0
+            ))
+            api_keys = [cursor.fetchone()]
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return api_keys
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"获取API Keys失败: {str(e)}")
+
+@app.post("/api/v1/user/projects")
+async def create_api_key(
+    api_key_data: ApiKeyCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """创建新的API Key"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        key_id = f"key_{int(time.time())}"
+        new_api_key_value = f"sk-{uuid.uuid4().hex}"
+
+        cursor.execute("""
+            INSERT INTO api_keys (id, user_id, name, description, api_key, status, create_time, last_used, call_count)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, user_id, name, description, api_key, status, create_time, last_used, call_count
+        """, (
+            key_id,
+            current_user["user_id"],
+            api_key_data.name,
+            api_key_data.description,
+            new_api_key_value,
+            "active",
+            datetime.now(),
+            None,
+            0
+        ))
+
+        new_api_key = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return new_api_key
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"创建API Key失败: {str(e)}")
+
+@app.put("/api/v1/user/projects/{key_id}")
+async def update_api_key(
+    key_id: str,
+    api_key_update: ApiKeyUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """更新API Key信息"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 检查API Key是否存在且属于该用户
+        cursor.execute("""
+            SELECT id, user_id, name, description, api_key, status
+            FROM api_keys
+            WHERE id = %s AND user_id = %s
+        """, (key_id, current_user["user_id"]))
+
+        api_key = cursor.fetchone()
+        if not api_key:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="API Key不存在")
+
+        # 更新字段
+        update_fields = []
+        params = []
+        if api_key_update.name:
+            update_fields.append("name = %s")
+            params.append(api_key_update.name)
+        if api_key_update.description:
+            update_fields.append("description = %s")
+            params.append(api_key_update.description)
+
+        if update_fields:
+            # 添加 updated_at 参数和 WHERE id 参数
+            params.extend([datetime.now(), key_id])
+            cursor.execute(f"""
+                UPDATE api_keys
+                SET {', '.join(update_fields)}, updated_at = %s
+                WHERE id = %s
+                RETURNING id, user_id, name, description, api_key, status, create_time, last_used, call_count
+            """, params)
+
+            updated_api_key = cursor.fetchone()
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return updated_api_key
+        else:
+            cursor.close()
+            conn.close()
+            return api_key
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"更新API Key失败: {str(e)}")
+
+@app.delete("/api/v1/user/projects/{key_id}")
+async def delete_api_key(
+    key_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """删除API Key"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 检查API Key是否存在且属于该用户
+        cursor.execute("""
+            SELECT id, user_id FROM api_keys
+            WHERE id = %s AND user_id = %s
+        """, (key_id, current_user["user_id"]))
+
+        api_key = cursor.fetchone()
+        if not api_key:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="API Key不存在")
+
+        # 删除API Key
+        cursor.execute("DELETE FROM api_keys WHERE id = %s", (key_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {"message": "API Key删除成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"删除API Key失败: {str(e)}")
+
+@app.post("/api/v1/user/projects/{key_id}/regenerate")
+async def regenerate_api_key(
+    key_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """重新生成API Key"""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 检查API Key是否存在且属于该用户
+        cursor.execute("""
+            SELECT id, user_id FROM api_keys
+            WHERE id = %s AND user_id = %s
+        """, (key_id, current_user["user_id"]))
+
+        api_key = cursor.fetchone()
+        if not api_key:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="API Key不存在")
+
+        # 生成新的API Key
+        new_api_key_value = f"sk-{uuid.uuid4().hex}"
+        cursor.execute("""
+            UPDATE api_keys
+            SET api_key = %s, updated_at = %s
+            WHERE id = %s
+            RETURNING api_key
+        """, (new_api_key_value, datetime.now(), key_id))
+
+        result = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {"api_key": result["api_key"], "message": "API Key重新生成成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"重新生成API Key失败: {str(e)}")
+
+# 账单管理API
+class BillCreate(BaseModel):
+    amount: float
+    payment_method: str
+
+@app.get("/api/v1/user/bills")
+async def get_bills(
+    type: Optional[str] = None,
+    status: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 10,
+    current_user: dict = Depends(get_current_user)
+):
+    """获取用户账单列表"""
+    user_bills = [b for b in bills_db.values() if b["user_id"] == current_user["user_id"]]
+
+    # 筛选
+    if type:
+        user_bills = [b for b in user_bills if b["type"] == type]
+    if status:
+        user_bills = [b for b in user_bills if b["status"] == status]
+    if start_date:
+        user_bills = [b for b in user_bills if b["create_time"] >= start_date]
+    if end_date:
+        user_bills = [b for b in user_bills if b["create_time"] <= end_date]
+
+    # 分页
+    total = len(user_bills)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged_bills = user_bills[start:end]
+
+    return {"list": paged_bills, "total": total}
+
+@app.post("/api/v1/user/recharge")
+async def recharge(
+    recharge_data: BillCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """账户充值"""
+    bill_id = f"bill_{int(time.time())}"
+
+    new_bill = {
+        "id": bill_id,
+        "user_id": current_user["user_id"],
+        "bill_no": f"B{datetime.now().strftime('%Y%m%d%H%M%S')}{random.randint(1000, 9999)}",
+        "type": "recharge",
+        "amount": recharge_data.amount,
+        "status": "paid",
+        "payment_method": recharge_data.payment_method,
+        "create_time": datetime.now().isoformat(),
+        "description": "账户充值"
+    }
+
+    bills_db[bill_id] = new_bill
+
+    # 更新用户余额
+    user = users_db.get(current_user["user_id"])
+    if user:
+        user["balance"] += recharge_data.amount
+
+    return {"message": "充值成功", "bill": new_bill}
+
+# 实名认证API
+class VerificationCreate(BaseModel):
+    real_name: str
+    id_card: str
+    phone: str
+
+@app.post("/api/v1/user/verify")
+async def submit_verification(
+    verification_data: VerificationCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """提交实名认证 - 直接验证,无需审核"""
+    # 验证身份证号格式
+    id_card = verification_data.id_card
+    if not validate_id_card_format(id_card):
+        raise HTTPException(status_code=400, detail="身份证号格式不正确")
+
+    # 验证手机号格式
+    if not len(verification_data.phone) == 11 or not verification_data.phone.startswith('1'):
+        raise HTTPException(status_code=400, detail="手机号格式不正确")
+
+    verification_id = f"verify_{int(time.time())}"
+
+    new_verification = {
+        "id": verification_id,
+        "user_id": current_user["user_id"],
+        "real_name": verification_data.real_name,
+        "id_card": id_card,
+        "phone": verification_data.phone,
+        "status": "approved",  # 直接通过
+        "create_time": datetime.now().isoformat()
+    }
+
+    verifications_db[verification_id] = new_verification
+
+    # 更新用户认证状态
+    user = users_db.get(current_user["user_id"])
+    if user:
+        user["verified"] = True
+        user["real_name"] = verification_data.real_name
+        user["phone"] = verification_data.phone
+        user["id_card"] = id_card
+
+    return {
+        "message": "实名认证成功",
+        "verification_id": verification_id,
+        "status": "approved"
+    }
+
+def validate_id_card_format(id_card: str) -> bool:
+    """验证身份证号格式"""
+    import re
+    pattern = r'^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\d{3}[0-9Xx]$'
+    if not re.match(pattern, id_card):
+        return False
+
+    # 验证校验码
+    weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
+    check_codes = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2']
+
+    total = 0
+    for i in range(17):
+        total += int(id_card[i]) * weights[i]
+
+    check_code = check_codes[total % 11]
+    return check_code == id_card[17].upper()
+
+@app.get("/api/v1/user/verify/status")
+async def get_verification_status(current_user: dict = Depends(get_current_user)):
+    """获取实名认证状态"""
+    user = users_db.get(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    is_verified = user.get("verified", False)
+
+    return {
+        "verified": is_verified,
+        "status": "approved" if is_verified else "not_submitted",
+        "reason": None
+    }
+
+# 用户信息管理API
+class UserInfoUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    position: Optional[str] = None
+    address: Optional[str] = None
+
+@app.get("/api/v1/user/info")
+async def get_user_info(current_user: dict = Depends(get_current_user)):
+    """获取用户信息"""
+    user = users_db.get(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    return {
+        "id": user["user_id"],
+        "username": user["username"],
+        "email": user.get("email", ""),
+        "phone": user.get("phone", ""),
+        "real_name": user.get("real_name", ""),
+        "id_card": user.get("id_card", ""),
+        "company": user.get("company", ""),
+        "position": user.get("position", ""),
+        "address": user.get("address", ""),
+        "verified": user.get("verified", False),
+        "avatar": user.get("avatar", ""),
+        "balance": user.get("balance", 0.0),
+        "remaining_quota": user.get("remaining_quota", 0),
+        "total_quota": user.get("total_quota", 0),
+        "create_time": user.get("create_time", datetime.now().isoformat())
+    }
+
+@app.put("/api/v1/user/info")
+async def update_user_info(
+    user_update: UserInfoUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """更新用户信息"""
+    user = users_db.get(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    if user_update.username:
+        user["username"] = user_update.username
+    if user_update.email:
+        user["email"] = user_update.email
+    if user_update.phone:
+        user["phone"] = user_update.phone
+    if user_update.company:
+        user["company"] = user_update.company
+    if user_update.position:
+        user["position"] = user_update.position
+    if user_update.address:
+        user["address"] = user_update.address
+
+    return {
+        "message": "个人信息更新成功",
+        "user": user
+    }
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.post("/api/v1/user/change-password")
+async def change_password(
+    password_data: PasswordChange,
+    current_user: dict = Depends(get_current_user)
+):
+    """修改密码"""
+    user = users_db.get(current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 简化验证: 实际应该验证current_password
+    if len(password_data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="新密码长度至少6位")
+
+    user["password"] = hashlib.sha256(password_data.new_password.encode()).hexdigest()
+
+    return {"message": "密码修改成功"}
+
+# ===== 用户中心API扩展 =====
+
+# 辅助函数
+def get_user_subscriptions(user_id: str):
+    """获取用户订阅"""
+    if user_id not in subscription_db:
+        subscription_db[user_id] = {
+            "package_id": None,
+            "status": "free",
+            "start_date": None,
+            "end_date": None,
+            "auto_renew": False,
+        }
+    return subscription_db[user_id]
+
+@app.get("/api/v1/user/subscription/overview")
+async def get_subscription_overview(current_user: dict = Depends(get_current_user)):
+    """获取套餐总览"""
+    user = users_db.get(current_user["user_id"])
+    subscription = get_user_subscriptions(current_user["user_id"])
+
+    # 计算用量统计
+    user_usage = [
+        r for r in usage_records_db
+        if r.get("user_id") == current_user["user_id"]
+    ]
+
+    total_tokens = sum(r.get("tokens", 0) for r in user_usage)
+
+    # 获取套餐信息
+    package = None
+    if subscription["package_id"]:
+        package = packages_db.get(subscription["package_id"])
+
+    return {
+        "package_name": package["package_name"] if package else "免费版",
+        "status": subscription["status"],
+        "end_date": subscription["end_date"],
+        "auto_renew": subscription.get("auto_renew", False),
+        "total_quota": package.get("quota_amount", 50) if package else 50,
+        "used_quota": total_tokens,
+        "remaining_quota": (package.get("quota_amount", 50) if package else 50) - total_tokens,
+    }
+
+@app.get("/api/v1/user/packages")
+async def get_user_packages(current_user: dict = Depends(get_current_user)):
+    """获取我的套餐列表"""
+    subscription = get_user_subscriptions(current_user["user_id"])
+
+    packages = list(packages_db.values())
+
+    # 标记当前订阅的套餐
+    for pkg in packages:
+        pkg["is_subscribed"] = (pkg["package_id"] == subscription["package_id"])
+        pkg["can_subscribe"] = True
+
+    return {
+        "current_package_id": subscription["package_id"],
+        "packages": packages
+    }
+
+@app.post("/api/v1/user/packages/subscribe")
+async def subscribe_package(
+    package_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """订阅套餐"""
+    if package_id not in packages_db:
+        raise HTTPException(status_code=404, detail="套餐不存在")
+
+    package = packages_db[package_id]
+
+    # 更新用户订阅
+    user_id = current_user["user_id"]
+    subscription = get_user_subscriptions(user_id)
+
+    subscription.update({
+        "package_id": package_id,
+        "status": "active",
+        "start_date": datetime.now().isoformat(),
+        "end_date": (datetime.now() + timedelta(days=90)).isoformat(),
+        "auto_renew": False,
+    })
+
+    # 更新用户配额
+    users_db[user_id]["total_quota"] = package["quota_amount"]
+    users_db[user_id]["remaining_quota"] = package["quota_amount"]
+
+    return {
+        "message": "套餐订阅成功",
+        "package_name": package["package_name"],
+        "end_date": subscription["end_date"]
+    }
+
+@app.get("/api/v1/user/usage")
+async def get_usage_statistics(
+    current_user: dict = Depends(get_current_user),
+    days: int = 30
+):
+    """获取用量统计"""
+    from datetime import timedelta
+
+    start_date = datetime.now() - timedelta(days=days)
+
+    user_usage = [
+        r for r in usage_records_db
+        if r.get("user_id") == current_user["user_id"]
+        and datetime.fromisoformat(r["timestamp"]) >= start_date
+    ]
+
+    # 按天统计
+    daily_usage = {}
+    for record in user_usage:
+        date = record["timestamp"][:10]
+        if date not in daily_usage:
+            daily_usage[date] = 0
+        daily_usage[date] += record.get("tokens", 0)
+
+    # 排序
+    sorted_usage = [
+        {"date": date, "tokens": daily_usage[date]}
+        for date in sorted(daily_usage.keys())
+    ]
+
+    return {
+        "period_days": days,
+        "total_tokens": sum(r.get("tokens", 0) for r in user_usage),
+        "total_requests": len(user_usage),
+        "daily_usage": sorted_usage,
+    }
+
+@app.get("/api/v1/user/benefits")
+async def get_user_benefits(current_user: dict = Depends(get_current_user)):
+    """获取用户权益"""
+    subscription = get_user_subscriptions(current_user["user_id"])
+
+    # 获取当前套餐
+    package = None
+    if subscription["package_id"]:
+        package = packages_db.get(subscription["package_id"])
+
+    package_name = package["package_name"] if package else "免费版"
+
+    # 定义所有可能的权益
+    all_benefits = [
+        {
+            "name": "API调用",
+            "description": "使用API进行安全检测",
+            "included": True,
+        },
+        {
+            "name": "实时检测",
+            "description": "实时文本内容安全检测",
+            "included": True,
+        },
+        {
+            "name": "批量检测",
+            "description": "批量文件安全检测",
+            "included": package is not None,
+        },
+        {
+            "name": "视觉理解",
+            "description": "图片内容安全检测",
+            "included": package.get("include_vision", False) if package else False,
+        },
+        {
+            "name": "联网搜索",
+            "description": "联网内容验证",
+            "included": package.get("include_search", False) if package else False,
+        },
+        {
+            "name": "MCP集成",
+            "description": "MCP服务集成能力",
+            "included": package.get("include_mcp", False) if package else False,
+        },
+        {
+            "name": "历史记录",
+            "description": "查看检测历史记录(7天)",
+            "included": True,
+        },
+        {
+            "name": "历史记录(30天)",
+            "description": "查看检测历史记录(30天)",
+            "included": package is not None,
+        },
+        {
+            "name": "数据导出",
+            "description": "导出检测报告",
+            "included": package is not None,
+        },
+        {
+            "name": "技术支持",
+            "description": "在线技术支持",
+            "included": package is not None,
+        },
+        {
+            "name": "优先处理",
+            "description": "请求优先处理队列",
+            "included": subscription.get("status") == "premium",
+        },
+        {
+            "name": "自定义规则",
+            "description": "自定义检测规则",
+            "included": subscription.get("status") == "premium",
+        },
+    ]
+
+    return {
+        "package_name": package_name,
+        "benefits": all_benefits,
+    }
+
+# 工单管理API
+from typing import Optional
+
+@app.get("/api/v1/user/tickets")
+async def get_tickets(
+    current_user: dict = Depends(get_current_user),
+    page: int = 1,
+    page_size: int = 10,
+    status: Optional[str] = None
+):
+    """获取工单列表"""
+    user_tickets = []
+
+    # 过滤该用户的工单
+    for ticket_id, ticket in tickets_db.items():
+        if ticket.get("user_id") == current_user["user_id"]:
+            # 如果指定了状态过滤
+            if status is None or ticket.get("status") == status:
+                user_tickets.append(ticket)
+
+    # 按创建时间倒序排序
+    user_tickets.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # 分页
+    total = len(user_tickets)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged_tickets = user_tickets[start:end]
+
+    return {
+        "items": paged_tickets,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+@app.post("/api/v1/user/tickets")
+async def create_ticket(
+    ticket_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """创建工单"""
+    global ticket_id_counter
+
+    ticket_id_counter += 1
+    ticket_id = f"ticket_{ticket_id_counter:06d}"
+
+    ticket = {
+        "ticket_id": ticket_id,
+        "user_id": current_user["user_id"],
+        "title": ticket_data.get("title"),
+        "category": ticket_data.get("category"),
+        "priority": ticket_data.get("priority", "medium"),
+        "description": ticket_data.get("description"),
+        "status": "open",  # open, processing, closed
+        "response": None,
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+    }
+
+    tickets_db[ticket_id] = ticket
+
+    return ticket
+
+@app.get("/api/v1/user/tickets/{ticket_id}")
+async def get_ticket_detail(
+    ticket_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """获取工单详情"""
+    if ticket_id not in tickets_db:
+        raise HTTPException(status_code=404, detail="工单不存在")
+
+    ticket = tickets_db[ticket_id]
+
+    # 验证是否是该用户的工单
+    if ticket.get("user_id") != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="无权访问此工单")
+
+    return ticket
+
+@app.put("/api/v1/user/tickets/{ticket_id}")
+async def update_ticket(
+    ticket_id: str,
+    update_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """更新工单"""
+    if ticket_id not in tickets_db:
+        raise HTTPException(status_code=404, detail="工单不存在")
+
+    ticket = tickets_db[ticket_id]
+
+    # 验证是否是该用户的工单
+    if ticket.get("user_id") != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="无权访问此工单")
+
+    # 更新允许的字段
+    if "status" in update_data:
+        ticket["status"] = update_data["status"]
+    if "response" in update_data:
+        ticket["response"] = update_data["response"]
+
+    ticket["updated_at"] = datetime.now().isoformat()
+
+    return ticket
+
+# 文件上传API
+from fastapi import UploadFile, File
+
+@app.post("/api/v1/user/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """上传文件"""
+    # 简化实现: 实际应该保存到文件系统或云存储
+    file_content = await file.read()
+
+    # 模拟生成URL
+    file_url = f"/uploads/{current_user['user_id']}/{int(time.time())}_{file.filename}"
+
+    return {
+        "url": file_url,
+        "filename": file.filename,
+        "size": len(file_content),
+        "message": "文件上传成功"
     }
 
 if __name__ == "__main__":

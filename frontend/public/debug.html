@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统诊断工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        h2 { color: #666; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+        .success { color: #52c41a; font-weight: bold; }
+        .error { color: #ff4d4f; font-weight: bold; }
+        .warning { color: #faad14; font-weight: bold; }
+        .info { color: #1890ff; }
+        pre {
+            background: #f6f6f6;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover { background: #40a9ff; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>🔧 系统诊断工具</h1>
+
+    <div class="card">
+        <h2>1. 后端服务状态</h2>
+        <div id="health-check">检查中...</div>
+    </div>
+
+    <div class="card">
+        <h2>2. 登录测试</h2>
+        <button onclick="testLogin()">测试登录</button>
+        <div id="login-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>3. Token存储检查</h2>
+        <div id="token-check">
+            <p>Access Token: <span id="token-value" class="info">未设置</span></p>
+            <p>User Info: <span id="user-info" class="info">未设置</span></p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>4. API调用测试</h2>
+        <button onclick="testAPI()">测试API Keys接口</button>
+        <div id="api-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>5. LocalStorage内容</h2>
+        <button onclick="showStorage()">显示存储内容</button>
+        <button onclick="clearStorage()">清除存储</button>
+        <pre id="storage-content"></pre>
+    </div>
+
+    <div class="card">
+        <h2>6. 快速操作</h2>
+        <button onclick="autoLogin()">自动登录并跳转</button>
+        <button onclick="goToApp()">前往应用主页</button>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        // 显示结果
+        function showResult(elementId, html, isSuccess = true) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = html;
+            el.className = isSuccess ? 'success' : 'error';
+        }
+
+        // 1. 健康检查
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                showResult('health-check',
+                    `✅ 后端服务正常<br>Status: ${data.status}<br>Service: ${data.service}`,
+                    true
+                );
+            } catch (error) {
+                showResult('health-check',
+                    `❌ 无法连接到后端服务<br>错误: ${error.message}`,
+                    false
+                );
+            }
+        }
+
+        // 2. 登录测试
+        async function testLogin() {
+            const resultDiv = document.getElementById('login-result');
+            resultDiv.innerHTML = '<p class="info">登录中...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: 'testuser',
+                        password: 'test123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // 保存到localStorage
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('user_info', JSON.stringify(data.user));
+
+                    showResult('login-result',
+                        `✅ 登录成功！<br>
+                        用户: ${data.user.username}<br>
+                        角色: ${data.user.role}<br>
+                        Token: ${data.access_token.substring(0, 30)}...`,
+                        true
+                    );
+
+                    // 更新显示
+                    updateTokenDisplay();
+                } else {
+                    showResult('login-result', `❌ 登录失败: ${data.detail}`, false);
+                }
+            } catch (error) {
+                showResult('login-result', `❌ 错误: ${error.message}`, false);
+            }
+        }
+
+        // 3. 更新Token显示
+        function updateTokenDisplay() {
+            const token = localStorage.getItem('access_token');
+            const user = localStorage.getItem('user_info');
+
+            document.getElementById('token-value').textContent =
+                token ? `${token.substring(0, 30)}...` : '未设置';
+            document.getElementById('token-value').className = token ? 'success' : 'error';
+
+            document.getElementById('user-info').textContent =
+                user ? JSON.parse(user).username : '未设置';
+            document.getElementById('user-info').className = user ? 'success' : 'error';
+        }
+
+        // 4. API调用测试
+        async function testAPI() {
+            const resultDiv = document.getElementById('api-result');
+            const token = localStorage.getItem('access_token');
+
+            if (!token) {
+                resultDiv.innerHTML = '<p class="error">❌ 请先登录！</p>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<p class="info">调用API中...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/user/projects`, {
+                    headers: { 'Authorization': token }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showResult('api-result',
+                        `✅ API调用成功！<br>
+                        获取到 ${data.length} 个API Keys<br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>`,
+                        true
+                    );
+                } else {
+                    showResult('api-result',
+                        `❌ API调用失败<br>Status: ${response.status}<br>错误: ${data.detail}`,
+                        false
+                    );
+                }
+            } catch (error) {
+                showResult('api-result', `❌ 错误: ${error.message}`, false);
+            }
+        }
+
+        // 5. 显示存储
+        function showStorage() {
+            const content = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                content[key] = localStorage.getItem(key);
+            }
+            document.getElementById('storage-content').textContent =
+                JSON.stringify(content, null, 2);
+        }
+
+        // 6. 清除存储
+        function clearStorage() {
+            if (confirm('确定要清除所有localStorage数据吗？')) {
+                localStorage.clear();
+                updateTokenDisplay();
+                showStorage();
+                alert('已清除所有数据');
+            }
+        }
+
+        // 自动登录
+        async function autoLogin() {
+            await testLogin();
+            if (document.getElementById('login-result').innerHTML.includes('登录成功')) {
+                alert('登录成功！即将跳转到应用...');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
+            }
+        }
+
+        // 前往应用
+        function goToApp() {
+            window.location.href = '/';
+        }
+
+        // 页面加载时执行
+        window.onload = function() {
+            checkHealth();
+            updateTokenDisplay();
+            showStorage();
+        };
+    </script>
+</body>
+</html>

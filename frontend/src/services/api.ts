@@ -27,8 +27,8 @@ const pendingRequests = new Map<string, CancelTokenSource>()
 const createApiClient = (): AxiosInstance => {
   const instance = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
-    // 缩短超时时间：从30秒改为5秒，快速失败
-    timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '5000'),
+    // 增加超时时间到30秒,给后端足够的处理时间
+    timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '30000'),
     headers: {
       'Content-Type': 'application/json',
     },
@@ -51,11 +51,11 @@ const createApiClient = (): AxiosInstance => {
       config.cancelToken = source.token
       pendingRequests.set(requestKey, source)
 
-      // 可以在这里添加认证token
-      // const token = localStorage.getItem('token')
-      // if (token) {
-      //   config.headers.Authorization = `Bearer ${token}`
-      // }
+      // 添加认证token
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        config.headers.Authorization = token
+      }
       return config
     },
     (error: AxiosError) => {
@@ -80,10 +80,17 @@ const createApiClient = (): AxiosInstance => {
         pendingRequests.delete(requestKey)
       }
 
-      // 如果是请求取消，不显示错误消息
+      // 如果是请求取消，静默处理(页面刷新/卸载时的正常行为)
       if (axios.isCancel(error)) {
-        console.log('请求已取消:', error.message)
-        return Promise.reject(error)
+        // 仅在开发模式下记录取消的请求(用于调试重复请求问题)
+        if (import.meta.env.DEV && error.message !== '取消重复请求') {
+          console.debug('请求已取消:', error.config?.url)
+        }
+        // 创建一个特殊的静默错误,不触发任何消息
+        const silentError = new Error('Request canceled')
+        ;(silentError as any).isCanceled = true
+        ;(silentError as any).silent = true
+        return Promise.reject(silentError)
       }
 
       const { response } = error
@@ -97,7 +104,13 @@ const createApiClient = (): AxiosInstance => {
             break
           case 401:
             message.error('未授权，请重新登录')
-            // 可以在这里跳转到登录页
+            // 清除本地存储的token
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('user_info')
+            // 跳转到登录页
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login'
+            }
             break
           case 403:
             message.error('拒绝访问')
@@ -112,9 +125,11 @@ const createApiClient = (): AxiosInstance => {
             message.error(data?.message || `请求失败 (${status})`)
         }
       } else if (error.code === 'ECONNABORTED') {
-        message.error('请求超时，请检查后端服务是否已启动')
+        message.error('请求超时,请稍后重试')
+        console.error('请求超时:', error.config?.url, error.message)
       } else {
-        message.error('网络错误，请检查网络连接和后端服务状态')
+        message.error('网络错误: ' + (error.message || '未知错误'))
+        console.error('网络错误详情:', error)
       }
 
       return Promise.reject(error)

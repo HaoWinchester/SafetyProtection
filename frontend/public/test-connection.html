@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API连接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { color: #52c41a; font-weight: bold; }
+        .error { color: #ff4d4f; font-weight: bold; }
+        .warning { color: #faad14; font-weight: bold; }
+        .info { color: #1890ff; }
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #40a9ff; }
+        pre {
+            background: #f6f6f6;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .test-result {
+            margin-top: 10px;
+            padding: 10px;
+            border-left: 4px solid #1890ff;
+            background: #f0f7ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 API连接测试工具</h1>
+    <p>用于诊断前端到后端API的连接问题</p>
+
+    <div class="card">
+        <h2>1. 基础连接测试</h2>
+        <button onclick="testHealth()">测试健康检查端点</button>
+        <button onclick="testRoot()">测试根路径</button>
+        <div id="basic-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>2. CORS测试</h2>
+        <button onclick="testCORS()">测试CORS预检请求</button>
+        <div id="cors-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>3. 认证测试</h2>
+        <button onclick="testLogin()">测试登录</button>
+        <button onclick="testAuthAPI()">测试需要认证的API</button>
+        <div id="auth-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>4. 详细错误信息</h2>
+        <button onclick="runAllTests()">运行所有测试</button>
+        <div id="detailed-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>5. 快速修复</h2>
+        <button onclick="autoLoginAndRedirect()">自动登录并跳转到应用</button>
+        <button onclick="clearAll()">清除所有数据</button>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        function showResult(elementId, html, isSuccess = true) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = html;
+        }
+
+        function addDetail(html) {
+            const el = document.getElementById('detailed-result');
+            el.innerHTML += html + '<br>';
+        }
+
+        // 1. 健康检查
+        async function testHealth() {
+            const resultDiv = document.getElementById('basic-result');
+            resultDiv.innerHTML = '<p class="info">测试中...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+
+                resultDiv.innerHTML = `
+                    <div class="test-result">
+                        <p class="success">✅ 健康检查成功</p>
+                        <p>状态码: ${response.status}</p>
+                        <p>响应: <pre>${JSON.stringify(data, null, 2)}</pre></p>
+                    </div>
+                `;
+                addDetail(`<p class="success">✅ /health - ${response.status}</p>`);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="test-result">
+                        <p class="error">❌ 健康检查失败</p>
+                        <p>错误: ${error.message}</p>
+                    </div>
+                `;
+                addDetail(`<p class="error">❌ /health - ${error.message}</p>`);
+            }
+        }
+
+        // 测试根路径
+        async function testRoot() {
+            const resultDiv = document.getElementById('basic-result');
+
+            try {
+                const response = await fetch(API_BASE);
+                const text = await response.text();
+
+                resultDiv.innerHTML += `
+                    <div class="test-result">
+                        <p class="success">✅ 根路径可访问</p>
+                        <p>状态码: ${response.status}</p>
+                    </div>
+                `;
+                addDetail(`<p class="success">✅ / - ${response.status}</p>`);
+            } catch (error) {
+                resultDiv.innerHTML += `
+                    <div class="test-result">
+                        <p class="error">❌ 根路径访问失败</p>
+                        <p>错误: ${error.message}</p>
+                    </div>
+                `;
+                addDetail(`<p class="error">❌ / - ${error.message}</p>`);
+            }
+        }
+
+        // 2. CORS测试
+        async function testCORS() {
+            const resultDiv = document.getElementById('cors-result');
+            resultDiv.innerHTML = '<p class="info">测试CORS...</p>';
+
+            try {
+                // 发起一个OPTIONS请求
+                const response = await fetch(`${API_BASE}/health`, {
+                    method: 'OPTIONS'
+                });
+
+                const corsHeaders = {
+                    'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Methods': response.headers.get('Access-Control-Allow-Methods'),
+                    'Access-Control-Allow-Headers': response.headers.get('Access-Control-Allow-Headers'),
+                };
+
+                resultDiv.innerHTML = `
+                    <div class="test-result">
+                        <p class="success">✅ CORS预检请求成功</p>
+                        <p>状态码: ${response.status}</p>
+                        <p>CORS头信息:<pre>${JSON.stringify(corsHeaders, null, 2)}</pre></p>
+                    </div>
+                `;
+                addDetail(`<p class="success">✅ CORS - 预检请求成功</p>`);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="test-result">
+                        <p class="error">❌ CORS预检请求失败</p>
+                        <p>错误: ${error.message}</p>
+                        <p class="warning">这通常意味着后端CORS配置有问题</p>
+                    </div>
+                `;
+                addDetail(`<p class="error">❌ CORS - ${error.message}</p>`);
+            }
+        }
+
+        // 3. 登录测试
+        async function testLogin() {
+            const resultDiv = document.getElementById('auth-result');
+            resultDiv.innerHTML = '<p class="info">测试登录...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: 'testuser',
+                        password: 'test123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // 保存token
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('user_info', JSON.stringify(data.user));
+
+                    resultDiv.innerHTML = `
+                        <div class="test-result">
+                            <p class="success">✅ 登录成功</p>
+                            <p>用户: ${data.user.username}</p>
+                            <p>角色: ${data.user.role}</p>
+                            <p>Token: ${data.access_token.substring(0, 50)}...</p>
+                        </div>
+                    `;
+                    addDetail(`<p class="success">✅ 登录成功 - ${data.user.username}</p>`);
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="test-result">
+                            <p class="error">❌ 登录失败</p>
+                            <p>错误: ${data.detail}</p>
+                        </div>
+                    `;
+                    addDetail(`<p class="error">❌ 登录失败 - ${data.detail}</p>`);
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="test-result">
+                        <p class="error">❌ 登录请求失败</p>
+                        <p>错误: ${error.message}</p>
+                    </div>
+                `;
+                addDetail(`<p class="error">❌ 登录请求 - ${error.message}</p>`);
+            }
+        }
+
+        // 测试需要认证的API
+        async function testAuthAPI() {
+            const resultDiv = document.getElementById('auth-result');
+            const token = localStorage.getItem('access_token');
+
+            if (!token) {
+                resultDiv.innerHTML = '<p class="warning">⚠️ 请先登录</p>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<p class="info">测试API调用...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/user/projects`, {
+                    headers: { 'Authorization': token }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <div class="test-result">
+                            <p class="success">✅ API调用成功</p>
+                            <p>获取到 ${data.length} 个API Keys</p>
+                        </div>
+                    `;
+                    addDetail(`<p class="success">✅ API认证成功</p>`);
+                } else {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <div class="test-result">
+                            <p class="error">❌ API调用失败</p>
+                            <p>状态码: ${response.status}</p>
+                            <p>错误: ${data.detail}</p>
+                        </div>
+                    `;
+                    addDetail(`<p class="error">❌ API - ${response.status} - ${data.detail}</p>`);
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="test-result">
+                        <p class="error">❌ 请求失败</p>
+                        <p>错误: ${error.message}</p>
+                    </div>
+                `;
+                addDetail(`<p class="error">❌ API请求 - ${error.message}</p>`);
+            }
+        }
+
+        // 运行所有测试
+        async function runAllTests() {
+            document.getElementById('detailed-result').innerHTML = '<h3>测试结果:</h3>';
+
+            await testHealth();
+            await testRoot();
+            await testCORS();
+            await testLogin();
+            await testAuthAPI();
+        }
+
+        // 自动登录并跳转
+        async function autoLoginAndRedirect() {
+            await testLogin();
+
+            const resultDiv = document.getElementById('auth-result');
+            if (resultDiv.innerHTML.includes('登录成功')) {
+                alert('登录成功!即将跳转到应用...');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
+            }
+        }
+
+        // 清除所有数据
+        function clearAll() {
+            if (confirm('确定要清除所有localStorage数据吗?')) {
+                localStorage.clear();
+                alert('已清除所有数据');
+                document.getElementById('detailed-result').innerHTML = '';
+                document.getElementById('auth-result').innerHTML = '';
+            }
+        }
+
+        // 页面加载时自动测试基础连接
+        window.onload = function() {
+            testHealth();
+        };
+    </script>
+</body>
+</html>

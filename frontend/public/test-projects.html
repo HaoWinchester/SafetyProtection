@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projects API 测试</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+        .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
+        .success { color: #52c41a; font-weight: bold; }
+        .error { color: #ff4d4f; font-weight: bold; }
+        .warning { color: #faad14; font-weight: bold; }
+        button { background: #1890ff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        pre { background: #f6f6f6; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Projects API 诊断工具</h1>
+
+    <div class="card">
+        <h2>1. 登录获取Token</h2>
+        <button onclick="login()">登录 (testuser/test123)</button>
+        <div id="login-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>2. 测试API</h2>
+        <button onclick="testProjectsAPI()">测试 /api/v1/user/projects</button>
+        <button onclick="testWithRealToken()">使用实际Token测试</button>
+        <div id="api-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>3. 数据结构检查</h2>
+        <button onclick="checkDataStructure()">检查数据结构</button>
+        <div id="structure-result"></div>
+    </div>
+
+    <div class="card">
+        <h2>4. 跳转到应用</h2>
+        <button onclick="goToApp()">前往Projects页面</button>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let storedToken = null;
+
+        async function login() {
+            const resultDiv = document.getElementById('login-result');
+            resultDiv.innerHTML = '<p class="info">登录中...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: 'testuser',
+                        password: 'test123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    storedToken = data.access_token;
+                    localStorage.setItem('access_token', storedToken);
+
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ 登录成功!</p>
+                        <p>用户: ${data.user.username}</p>
+                        <p>Token: ${storedToken.substring(0, 50)}...</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">❌ 登录失败: ${data.detail}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 错误: ${error.message}</p>`;
+            }
+        }
+
+        async function testProjectsAPI() {
+            const resultDiv = document.getElementById('api-result');
+            const token = localStorage.getItem('access_token');
+
+            if (!token) {
+                resultDiv.innerHTML = '<p class="warning">⚠️ 请先登录!</p>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<p class="info">测试API中...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/user/projects`, {
+                    headers: { 'Authorization': token }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ API调用成功!</p>
+                        <p>获取到 ${data.length} 个API Keys</p>
+                        <p>数据类型: ${Array.isArray(data) ? '数组' : typeof data}</p>
+                        <details>
+                            <summary>查看完整数据</summary>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </details>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">❌ API错误 (${response.status}): ${data.detail}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 网络错误: ${error.message}</p>`;
+            }
+        }
+
+        async function testWithRealToken() {
+            const resultDiv = document.getElementById('api-result');
+
+            // 使用一个已知的有效token
+            const testToken = 'Bearer dXNlcl90ZXN0MDAxOjE3Njc0OTIwOTQuODAyODQy';
+
+            resultDiv.innerHTML = '<p class="info">使用测试Token测试API...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/user/projects`, {
+                    headers: { 'Authorization': testToken }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ API调用成功!</p>
+                        <p>获取到 ${data.length} 个API Keys</p>
+                        <p>第一个项目的字段:</p>
+                        <pre>${JSON.stringify(data[0], null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">❌ API错误: ${data.detail}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 错误: ${error.message}</p>`;
+            }
+        }
+
+        async function checkDataStructure() {
+            const resultDiv = document.getElementById('structure-result');
+            const token = localStorage.getItem('access_token');
+
+            if (!token) {
+                resultDiv.innerHTML = '<p class="warning">⚠️ 请先登录!</p>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/user/projects`, {
+                    headers: { 'Authorization': token }
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.length > 0) {
+                    const firstItem = data[0];
+                    const fields = Object.keys(firstItem);
+
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ 数据结构检查完成</p>
+                        <p>字段列表 (${fields.length}个):</p>
+                        <ul>
+                            ${fields.map(f => `<li><code>${f}</code>: ${typeof firstItem[f]} = ${firstItem[f]}</li>`).join('')}
+                        </ul>
+                        <p class="info">
+                            <strong>重要:</strong> 注意字段名是蛇形命名(api_key)还是驼峰命名(apiKey)
+                        </p>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 错误: ${error.message}</p>`;
+            }
+        }
+
+        function goToApp() {
+            window.location.href = '/usercenter/projects';
+        }
+
+        // 页面加载时检查是否已有token
+        window.onload = function() {
+            if (localStorage.getItem('access_token')) {
+                document.getElementById('login-result').innerHTML = '<p class="success">✅ 已检测到Token,可以直接测试API</p>';
+            }
+        };
+    </script>
+</body>
+</html>
