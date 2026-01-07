@@ -18,6 +18,18 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
 
+# 导入增强检测模块
+from enhanced_detection import detect_enhanced_prompt_injection
+
+# 导入高级检测模块 (基于2024-2025最新攻击模式)
+from advanced_detection import detect_advanced_prompt_injection
+
+# 导入2025终极检测模块 (最新研究成果)
+from ultimate_detection_2025 import detect_ultimate_prompt_injection
+
+# 导入数据库检测模块 (1032+测试用例对比检测)
+from database_detection import detect_with_database
+
 # 导入用户中心API扩展 - 暂时注释,直接在此文件中定义
 # import usercenter_api
 
@@ -46,6 +58,53 @@ def get_db_connection():
         print(f"数据库连接失败: {e}")
         return None
 
+def log_api_call(
+    user_id: str,
+    api_key_id: str,
+    endpoint: str,
+    method: str,
+    request_text: str = None,
+    request_body: dict = None,
+    response_status: int = 200,
+    response_body: dict = None,
+    risk_score: float = None,
+    risk_level: str = None,
+    is_compliant: bool = True,
+    threat_category: str = None,
+    processing_time_ms: int = None,
+    ip_address: str = None,
+    user_agent: str = None
+):
+    """记录API调用到数据库"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return
+
+        cursor = conn.cursor()
+        log_id = f"log_{uuid.uuid4().hex[:24]}"
+
+        cursor.execute(
+            """INSERT INTO api_call_logs
+               (id, user_id, api_key_id, endpoint, method, request_text, request_body,
+                response_status, response_body, risk_score, risk_level, is_compliant,
+                threat_category, processing_time_ms, ip_address, user_agent)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (log_id, user_id, api_key_id, endpoint, method, request_text,
+             json.dumps(request_body) if request_body else None,
+             response_status, json.dumps(response_body) if response_body else None,
+             risk_score, risk_level, is_compliant, threat_category,
+             processing_time_ms, ip_address, user_agent)
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"API调用已记录: {log_id}")
+    except Exception as e:
+        print(f"记录API调用失败: {e}")
+
 def init_db():
     """初始化数据库表"""
     conn = get_db_connection()
@@ -62,7 +121,20 @@ def init_db():
             cursor.execute(sql)
             conn.commit()
 
-        print("数据库表初始化成功")
+        print("基础数据库表初始化成功")
+
+        # 读取并执行API调用日志表初始化脚本
+        try:
+            with open('api_call_logs.sql', 'r', encoding='utf-8') as f:
+                sql = f.read()
+                cursor.execute(sql)
+                conn.commit()
+            print("API调用日志表初始化成功")
+        except FileNotFoundError:
+            print("警告: api_call_logs.sql 文件不存在,API调用日志功能将不可用")
+        except Exception as e:
+            print(f"API调用日志表初始化失败: {e}")
+
         cursor.close()
         conn.close()
         return True
@@ -133,132 +205,265 @@ async def get_config():
         }
     }
 
-# 示例检测端点
-@app.post("/api/v1/detection/detect")
-async def detect(request: dict):
-    return {
-        "request_id": "test-123",
-        "timestamp": datetime.now().isoformat() + "Z",
-        "is_compliant": True,
-        "risk_score": 0.1,
-        "risk_level": "low",
-        "threat_category": None,
-        "detection_details": {
-            "matched_patterns": [],
-            "attack_vector": None,
-            "confidence": 0.9
-        },
-        "recommendation": "pass",
-        "processing_time_ms": 25
-    }
-
-# ===== 统计API接口 =====
+# ===== 监控API接口 =====
 
 @app.get("/api/v1/statistics/overview")
 async def get_statistics_overview(
-    start: Optional[str] = None,
-    end: Optional[str] = None
 ):
     """
-    获取统计概览数据
+    获取统计概览数据 - 从真实数据库获取用户调用检测接口的数据
+
+    统计所有历史数据(不限制时间范围)
     """
-    # 生成模拟数据 - 匹配前端期望的数据结构
-    return {
-        "total_detections": random.randint(10000, 50000),
-        "compliant_count": random.randint(8000, 45000),
-        "non_compliant_count": random.randint(500, 3000),
-        "avg_risk_score": round(random.uniform(0.1, 0.4), 3),
-        "attack_distribution": {},
-        "trend": []
-    }
+    try:
+        conn = get_db_connection()
+        if not conn:
+            # 数据库连接失败时返回空数据
+            print(f"[DEBUG] 数据库连接失败")
+            return {
+                "total_detections": 0,
+                "compliant_count": 0,
+                "non_compliant_count": 0,
+                "avg_risk_score": 0,
+                "attack_distribution": {},
+                "trend": []
+            }
+
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        print(f"[DEBUG] 请求概览统计 (所有用户数据)")
+
+        # 总检测次数 - 统计所有用户
+        cursor.execute(
+            """SELECT COUNT(*) as total FROM api_call_logs"""
+        )
+        total_detections = cursor.fetchone()["total"]
+
+        # 合规检测次数
+        cursor.execute(
+            """SELECT COUNT(*) as compliant FROM api_call_logs
+               WHERE is_compliant = true"""
+        )
+        compliant_count = cursor.fetchone()["compliant"]
+
+        # 不合规检测次数
+        non_compliant_count = total_detections - compliant_count
+
+        # 平均风险分数
+        cursor.execute(
+            """SELECT AVG(risk_score) as avg_risk FROM api_call_logs
+               WHERE risk_score IS NOT NULL"""
+        )
+        avg_risk = cursor.fetchone()["avg_risk"] or 0
+
+        # 攻击类型分布
+        cursor.execute(
+            """SELECT threat_category, COUNT(*) as count FROM api_call_logs
+               WHERE threat_category IS NOT NULL
+               GROUP BY threat_category
+               ORDER BY count DESC"""
+        )
+        attack_distribution = {row["threat_category"]: row["count"] for row in cursor.fetchall()}
+
+        cursor.close()
+        conn.close()
+
+        # 调试日志
+        print(f"[DEBUG] 查询结果: total_detections={total_detections}, compliant_count={compliant_count}, non_compliant_count={non_compliant_count}, avg_risk={avg_risk}")
+        print(f"[DEBUG] attack_distribution={attack_distribution}")
+
+        return {
+            "total_detections": total_detections,
+            "compliant_count": compliant_count,
+            "non_compliant_count": non_compliant_count,
+            "avg_risk_score": round(avg_risk, 3),  # 保留3位小数,不转换为百分比
+            "attack_distribution": attack_distribution,
+            "trend": []  # 趋势数据在trends接口提供
+        }
+
+    except Exception as e:
+        print(f"获取概览统计失败: {e}")
+        # 出错时返回空数据
+        return {
+            "total_detections": 0,
+            "compliant_count": 0,
+            "non_compliant_count": 0,
+            "avg_risk_score": 0,
+            "attack_distribution": {},
+            "trend": []
+        }
 
 @app.get("/api/v1/statistics/trends")
 async def get_statistics_trends(
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-    interval: str = "day"
 ):
     """
-    获取趋势数据
+    获取趋势数据 - 从真实数据库获取用户调用检测接口的趋势
     """
-    # 根据时间间隔生成模拟数据 - 匹配前端ChartData结构
-    points = 7  # 最近7天
-    labels = []
-    datasets = [
-        {
-            "name": "检测次数",
-            "data": [],
-            "type": "line"
-        },
-        {
-            "name": "威胁次数",
-            "data": [],
-            "type": "line"
+    try:
+        conn = get_db_connection()
+        if not conn:
+            # 数据库连接失败时返回空数据
+            return {
+                "labels": [],
+                "datasets": [
+                    {"label": "检测次数", "data": []},
+                    {"label": "风险次数", "data": []}
+                ]
+            }
+
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        print(f"[DEBUG] 请求趋势数据 (按日期统计,所有用户)")
+
+        # 按日期统计检测次数 - 所有用户的所有历史数据
+        cursor.execute(
+            """SELECT DATE(call_time) as date,
+                      COUNT(*) as total_count,
+                      COUNT(*) FILTER (WHERE is_compliant = false) as risk_count
+               FROM api_call_logs
+               GROUP BY DATE(call_time)
+               ORDER BY date"""
+        )
+
+        rows = cursor.fetchall()
+
+        # 构建图表数据
+        labels = [str(row["date"]) for row in rows]
+        total_data = [row["total_count"] for row in rows]
+        risk_data = [row["risk_count"] for row in rows]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "labels": labels,
+            "datasets": [
+                {
+                    "label": "检测次数",
+                    "data": total_data
+                },
+                {
+                    "label": "风险次数",
+                    "data": risk_data
+                }
+            ]
         }
-    ]
 
-    base_date = datetime.now() - timedelta(days=points)
-
-    for i in range(points):
-        date = base_date + timedelta(days=i)
-        labels.append(date.strftime("%Y-%m-%d"))
-        datasets[0]["data"].append(random.randint(100, 500))
-        datasets[1]["data"].append(random.randint(10, 50))
-
-    return {
-        "labels": labels,
-        "datasets": datasets
-    }
+    except Exception as e:
+        print(f"获取趋势数据失败: {e}")
+        # 出错时返回空数据
+        return {
+            "labels": [],
+            "datasets": [
+                {"label": "检测次数", "data": []},
+                {"label": "风险次数", "data": []}
+            ]
+        }
 
 @app.get("/api/v1/statistics/distribution")
 async def get_statistics_distribution(
-    start: Optional[str] = None,
-    end: Optional[str] = None
 ):
     """
-    获取威胁分布数据
+    获取威胁分布数据 - 从真实数据库获取用户调用检测接口的分布
     """
-    # 匹配前端期望的数据结构
-    return {
-        "attackTypes": {
-            "labels": ["提示词注入", "越狱攻击", "数据泄露", "模型操纵", "社会工程"],
-            "datasets": [{
-                "name": "攻击次数",
-                "data": [
-                    random.randint(200, 500),
-                    random.randint(100, 300),
-                    random.randint(50, 150),
-                    random.randint(30, 100),
-                    random.randint(20, 80)
-                ]
-            }]
-        },
-        "riskLevels": {
-            "labels": ["低风险", "中风险", "高风险", "严重风险"],
-            "datasets": [{
-                "name": "检测次数",
-                "data": [
-                    random.randint(500, 800),
-                    random.randint(200, 400),
-                    random.randint(50, 150),
-                    random.randint(10, 50)
-                ]
-            }]
-        },
-        "detectionTime": {
-            "labels": ["0-20ms", "20-40ms", "40-60ms", "60-80ms", ">80ms"],
-            "datasets": [{
-                "name": "检测次数",
-                "data": [
-                    random.randint(1000, 2000),
-                    random.randint(500, 1000),
-                    random.randint(200, 500),
-                    random.randint(100, 300),
-                    random.randint(50, 150)
-                ]
-            }]
+    try:
+        conn = get_db_connection()
+        if not conn:
+            # 数据库连接失败时返回空数据
+            return {
+                "attackTypes": {
+                    "labels": [],
+                    "datasets": [{"data": []}]
+                },
+                "riskLevels": {
+                    "labels": [],
+                    "datasets": [{"data": []}]
+                },
+                "detectionTime": {
+                    "labels": [],
+                    "datasets": [{"data": []}]
+                }
+            }
+
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        print(f"[DEBUG] 请求分布数据 (所有用户)")
+
+        # 攻击类型分布 - 所有历史数据
+        cursor.execute(
+            """SELECT threat_category, COUNT(*) as count FROM api_call_logs
+               WHERE threat_category IS NOT NULL
+               GROUP BY threat_category
+               ORDER BY count DESC"""
+        )
+        attack_types_rows = cursor.fetchall()
+
+        # 风险等级分布 - 按照严重程度排序
+        cursor.execute(
+            """SELECT risk_level, COUNT(*) as count FROM api_call_logs
+               WHERE risk_level IS NOT NULL
+               GROUP BY risk_level
+               ORDER BY
+                 CASE risk_level
+                   WHEN '低风险' THEN 1
+                   WHEN '中风险' THEN 2
+                   WHEN '高风险' THEN 3
+                   WHEN '严重风险' THEN 4
+                   ELSE 5
+                 END"""
+        )
+        risk_levels_rows = cursor.fetchall()
+
+        # 检测时间分布 - 所有历史数据
+        cursor.execute(
+            """SELECT EXTRACT(HOUR FROM call_time) as hour, COUNT(*) as count
+               FROM api_call_logs
+               GROUP BY EXTRACT(HOUR FROM call_time)
+               ORDER BY hour"""
+        )
+        detection_time_rows = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "attackTypes": {
+                "labels": [row["threat_category"] for row in attack_types_rows],
+                "datasets": [{
+                    "data": [row["count"] for row in attack_types_rows]
+                }]
+            },
+            "riskLevels": {
+                "labels": [row["risk_level"] or "unknown" for row in risk_levels_rows],
+                "datasets": [{
+                    "data": [row["count"] for row in risk_levels_rows]
+                }]
+            },
+            "detectionTime": {
+                "labels": [f'{int(row["hour"])}:00' for row in detection_time_rows],
+                "datasets": [{
+                    "data": [row["count"] for row in detection_time_rows]
+                }]
+            }
         }
-    }
+
+    except Exception as e:
+        print(f"获取分布数据失败: {e}")
+        # 出错时返回空数据
+        return {
+            "attackTypes": {
+                "labels": [],
+                "datasets": [{"data": []}]
+            },
+            "riskLevels": {
+                "labels": [],
+                "datasets": [{"data": []}]
+            },
+            "detectionTime": {
+                "labels": [],
+                "datasets": [{"data": []}]
+            }
+        }
 
 # ===== 监控API接口 =====
 
@@ -804,10 +1009,61 @@ usage_records_db = []  # 用户中心API需要
 subscription_db = {}  # 用户订阅数据库
 tickets_db = {}  # 工单数据库
 ticket_id_counter = 0  # 工单ID计数器
+settings_db = {}  # 系统设置数据库
+verifications_db = {}  # 实名认证数据库(用于缓存,实际数据存储在PostgreSQL)
 
 # 初始化默认管理员用户
 def init_default_data():
-    """初始化默认数据"""
+    """初始化默认数据 - 同时保存到数据库和内存"""
+    conn = get_db_connection()
+    cursor = None
+    if conn:
+        try:
+            cursor = conn.cursor()
+
+            # 默认管理员
+            admin_id = "user_admin001"
+            # 检查数据库中是否已存在管理员
+            cursor.execute("SELECT user_id FROM users WHERE user_id = %s", (admin_id,))
+            if not cursor.fetchone():
+                # 插入管理员到数据库 - 使用正确的字段名
+                cursor.execute(
+                    """INSERT INTO users (user_id, username, email, password_hash, real_name, role, status, verified, remaining_quota, total_quota)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO NOTHING""",
+                    (admin_id, "admin", "admin@example.com",
+                     hashlib.sha256("admin123".encode()).hexdigest(),
+                     "系统管理员", "admin", "active", True, 10000, 10000)
+                )
+                print(f"管理员账号 {admin_id} 已创建到数据库")
+
+            # 默认普通用户
+            user_id = "user_test001"
+            cursor.execute("SELECT user_id FROM users WHERE user_id = %s", (user_id,))
+            if not cursor.fetchone():
+                # 插入测试用户到数据库 - 使用正确的字段名
+                cursor.execute(
+                    """INSERT INTO users (user_id, username, email, password_hash, real_name, role, status, verified, remaining_quota, total_quota)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO NOTHING""",
+                    (user_id, "testuser", "user@example.com",
+                     hashlib.sha256("test123".encode()).hexdigest(),
+                     "测试用户", "user", "active", True, 50, 50)
+                )
+                print(f"测试用户 {user_id} 已创建到数据库")
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"创建默认用户到数据库失败: {e}")
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+            conn = None
+
+    # 同时保存到内存数据库(作为回退)
     # 默认管理员
     admin_id = "user_admin001"
     if admin_id not in users_db:
@@ -920,7 +1176,7 @@ def create_access_token(data: dict):
     return f"Bearer {token}"
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """获取当前用户"""
+    """获取当前用户 - 从数据库读取以确保获取最新信息"""
     token = credentials.credentials
 
     # 简化的token验证 (生产环境应使用JWT库)
@@ -929,23 +1185,88 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         decoded = base64.b64decode(token.replace("Bearer ", "").encode()).decode()
         user_id = decoded.split(":")[0]
 
+        # 先尝试从数据库读取用户信息
+        conn = get_db_connection()
+        if conn:
+            try:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                # 数据库表使用 status 而不是 is_active
+                # 添加 remaining_quota 和 total_quota 字段
+                cursor.execute(
+                    "SELECT user_id, username, email, role, verified, status, remaining_quota, total_quota, created_at FROM users WHERE user_id = %s",
+                    (user_id,)
+                )
+                db_user = cursor.fetchone()
+                cursor.close()
+                conn.close()
+
+                if db_user:
+                    # 确保用户是激活状态 (数据库中status字段)
+                    is_active = db_user.get("status", "active") == "active"
+                    if not is_active:
+                        raise HTTPException(status_code=403, detail="用户已被禁用")
+
+                    # 返回数据库中的用户信息
+                    return {
+                        "user_id": db_user["user_id"],
+                        "username": db_user["username"],
+                        "email": db_user["email"],
+                        "role": db_user.get("role", "user"),  # 从数据库读取role
+                        "verified": db_user.get("verified", False),
+                        "is_active": is_active,  # 从status映射
+                        "status": db_user.get("status", "active"),
+                        "remaining_quota": db_user.get("remaining_quota", 0),
+                        "total_quota": db_user.get("total_quota", 0),
+                        "created_at": db_user.get("created_at"),
+                    }
+            except Exception as e:
+                print(f"从数据库读取用户信息失败: {e}")
+                # 如果数据库读取失败,尝试从内存读取作为回退
+                pass
+
+        # 回退到内存数据库(用于测试或数据库不可用时)
         if user_id not in users_db:
-            raise HTTPException(status_code=401, detail="User not found")
+            raise HTTPException(status_code=401, detail="用户不存在或token无效")
 
         user = users_db[user_id]
         if not user["is_active"]:
-            raise HTTPException(status_code=403, detail="User is disabled")
+            raise HTTPException(status_code=403, detail="用户已被禁用")
 
         return user
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as e:
+        print(f"Token验证失败: {e}")
+        raise HTTPException(status_code=401, detail="无效的token")
 
 @app.post("/api/v1/auth/register", response_model=dict)
 async def register_user(user_data: UserCreate):
-    """用户注册"""
-    # 检查邮箱是否已存在
+    """用户注册 - 同时保存到数据库和内存"""
+    # 先检查数据库中是否已存在该用户
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(
+                "SELECT user_id FROM users WHERE email = %s OR username = %s",
+                (user_data.email, user_data.username)
+            )
+            existing_user = cursor.fetchone()
+            cursor.close()
+
+            if existing_user:
+                if existing_user["username"] == user_data.username:
+                    raise HTTPException(status_code=400, detail="用户名已被占用")
+                else:
+                    raise HTTPException(status_code=400, detail="邮箱已被注册")
+        except HTTPException:
+            conn.close()
+            raise
+        except Exception as e:
+            print(f"检查数据库用户失败: {e}")
+            conn.close()
+
+    # 也检查内存数据库
     for user in users_db.values():
         if user["email"] == user_data.email:
             raise HTTPException(status_code=400, detail="邮箱已被注册")
@@ -954,11 +1275,35 @@ async def register_user(user_data: UserCreate):
 
     # 创建新用户
     user_id = f"user_{uuid.uuid4().hex[:16]}"
+    hashed_password = hashlib.sha256(user_data.password.encode()).hexdigest()
+
+    # 先保存到数据库
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # 数据库字段: password_hash, real_name, status
+            cursor.execute(
+                """INSERT INTO users (user_id, username, email, password_hash, real_name, phone, company, role, status, verified, remaining_quota, total_quota)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (user_id, user_data.username, user_data.email, hashed_password,
+                 user_data.full_name, user_data.phone, user_data.company,
+                 "user", "active", False, 10, 10)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print(f"用户 {user_id} 已保存到数据库")
+        except Exception as e:
+            print(f"保存用户到数据库失败: {e}")
+            conn.rollback()
+            conn.close()
+
+    # 也保存到内存数据库(用于回退)
     new_user = {
         "user_id": user_id,
         "email": user_data.email,
         "username": user_data.username,
-        "hashed_password": hashlib.sha256(user_data.password.encode()).hexdigest(),
+        "hashed_password": hashed_password,
         "full_name": user_data.full_name,
         "phone": user_data.phone,
         "company": user_data.company,
@@ -984,27 +1329,86 @@ async def register_user(user_data: UserCreate):
 
 @app.post("/api/v1/auth/login", response_model=dict)
 async def login_user(credentials: UserLogin):
-    """用户登录"""
-    # 查找用户
+    """用户登录 - 从数据库读取用户信息"""
+    # 先尝试从数据库查找用户
     user = None
-    for u in users_db.values():
-        if u["username"] == credentials.username or u["email"] == credentials.username:
-            user = u
-            break
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            # 数据库字段: password_hash, status
+            cursor.execute(
+                "SELECT user_id, username, email, password_hash, role, verified, status, created_at FROM users WHERE username = %s OR email = %s",
+                (credentials.username, credentials.username)
+            )
+            db_user = cursor.fetchone()
+            cursor.close()
+            conn.close()
 
+            if db_user:
+                # 验证密码 - 数据库字段是password_hash
+                password_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
+                if db_user["password_hash"] != password_hash:
+                    raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+                # 数据库字段是status,需要转换为is_active
+                is_active = db_user.get("status", "active") == "active"
+                if not is_active:
+                    raise HTTPException(status_code=403, detail="用户已被禁用")
+
+                # 更新最后登录时间
+                try:
+                    conn = get_db_connection()
+                    if conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = %s",
+                            (db_user["user_id"],)
+                        )
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
+                except Exception as e:
+                    print(f"更新最后登录时间失败: {e}")
+
+                # 构造用户信息
+                user = {
+                    "user_id": db_user["user_id"],
+                    "username": db_user["username"],
+                    "email": db_user["email"],
+                    "role": db_user.get("role", "user"),
+                    "verified": db_user.get("verified", False),
+                    "is_active": is_active,
+                    "status": db_user.get("status", "active"),
+                    "created_at": db_user.get("created_at"),
+                }
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"从数据库读取用户失败: {e}")
+            # 如果数据库读取失败,尝试从内存读取
+            pass
+
+    # 回退到内存数据库
     if not user:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        for u in users_db.values():
+            if u["username"] == credentials.username or u["email"] == credentials.username:
+                user = u
+                break
 
-    # 验证密码
-    password_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
-    if user["hashed_password"] != password_hash:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        if not user:
+            raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    if not user["is_active"]:
-        raise HTTPException(status_code=403, detail="用户已被禁用")
+        # 验证密码
+        password_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
+        if user["hashed_password"] != password_hash:
+            raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    # 更新最后登录时间
-    user["last_login_at"] = datetime.now().isoformat()
+        if not user["is_active"]:
+            raise HTTPException(status_code=403, detail="用户已被禁用")
+
+        # 更新最后登录时间
+        user["last_login_at"] = datetime.now().isoformat()
 
     # 生成token
     access_token = create_access_token({"sub": user["user_id"]})
@@ -1145,6 +1549,231 @@ async def update_user_quota(
         "new_balance": user["remaining_quota"],
         "reason": quota_update.get("reason", "")
     }
+
+# ===== 检测API接口 =====
+
+@app.post("/api/v1/detection/detect")
+async def detect(
+    request: dict,
+    http_auth: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    检测文本安全性的API接口
+    """
+    import time
+    start_time = time.time()
+
+    # 提取API Key（从Authorization header）
+    api_key = http_auth.credentials.replace("Bearer ", "") if http_auth and http_auth.credentials else "unknown"
+
+    # 获取客户端信息
+    ip_address = "127.0.0.1"
+    user_agent = "Unknown"
+
+    # 从token中获取user_id
+    user_id = "unknown"
+    try:
+        import base64
+        token = http_auth.credentials.replace("Bearer ", "") if http_auth and http_auth.credentials else ""
+        if token:
+            decoded = base64.b64decode(token.encode()).decode()
+            user_id = decoded.split(":")[0]
+    except:
+        user_id = "unknown"
+
+    # 执行检测逻辑
+    text = request.get("text", "")
+    detection_type = request.get("detection_type", "prompt_injection")
+
+    # 初始化变量
+    is_attack = False
+    is_compliant = True
+    detected_attack = None
+    matched_keywords = []
+    risk_score = 0.0
+    risk_level = "low"
+    threat_category = None
+
+    # 增强的检测逻辑 - 支持多种攻击类型
+    attack_patterns = {
+        "提示词注入": ["忽略", "忽略之前", "无视之前", "forget previous", "prompt injection"],
+        "越狱攻击": ["越狱", "jailbreak", "dan模式", "dan mode", "developer mode"],
+        "数据泄露": ["泄露", "训练数据", "显示训练", "training data", "show me"],
+        "模型操纵": ["输出控制", "强制输出", "ignore rule", "override instruction"],
+        "社会工程": ["冒充", "假装", "角色扮演", "pretend", "act as"]
+    }
+
+    # 第1层: 数据库检测 (1032+测试用例对比,最高优先级,最准确)
+    database_result = detect_with_database(text)
+
+    # 如果数据库检测器检测到攻击,使用其结果
+    if database_result['is_attack']:
+        is_attack = True
+        is_compliant = False
+        detected_attack = database_result['attack_types'][0] if database_result['attack_types'] else "未知攻击"
+        matched_keywords = database_result['details']['matches']
+        risk_score = database_result['risk_score']
+        risk_level = database_result['risk_level']
+        threat_category = detected_attack
+    else:
+        # 第2层: 2025终极检测器进行检测 (最新研究成果)
+        ultimate_result = detect_ultimate_prompt_injection(text)
+
+        # 如果2025终极检测器检测到攻击,使用其结果
+        if ultimate_result['is_attack']:
+            is_attack = True
+            is_compliant = False
+            detected_attack = ultimate_result['attack_types'][0] if ultimate_result['attack_types'] else "未知攻击"
+            matched_keywords = ultimate_result['details']['matches']
+            risk_score = ultimate_result['risk_score']
+            # 2025检测器返回的是英文风险等级,直接使用
+            risk_level = ultimate_result['risk_level']
+            threat_category = detected_attack
+        else:
+            # 第3层: 高级检测器作为后备
+            advanced_result = detect_advanced_prompt_injection(text)
+
+            if advanced_result['is_attack']:
+                is_attack = True
+                is_compliant = False
+                detected_attack = advanced_result['attack_types'][0] if advanced_result['attack_types'] else "未知攻击"
+                matched_keywords = advanced_result['details']['matches']
+                risk_score = advanced_result['risk_score']
+                # 高级检测器返回的是英文风险等级,直接使用
+                risk_level = advanced_result['risk_level']
+                threat_category = detected_attack
+            else:
+                # 第4层: 增强检测器作为最后后备
+                enhanced_result = detect_enhanced_prompt_injection(text)
+
+                if enhanced_result['is_attack']:
+                    is_attack = True
+                    is_compliant = False
+                    detected_attack = enhanced_result['attack_types'][0] if enhanced_result['attack_types'] else "未知攻击"
+                    matched_keywords = enhanced_result['details']['matches']
+                    risk_score = enhanced_result['risk_score']
+                    risk_level = enhanced_result['risk_level']
+                    threat_category = detected_attack
+                else:
+                    # 如果所有检测器都未检测到,使用基础规则作为最后后备
+                    detected_attack = None
+                    matched_keywords = []
+
+                    for attack_type, keywords in attack_patterns.items():
+                        for keyword in keywords:
+                            if keyword.lower() in text.lower():
+                                detected_attack = attack_type
+                                matched_keywords.append(keyword)
+                                break
+                        if detected_attack:
+                            break
+
+                    is_attack = detected_attack is not None
+                    is_compliant = not is_attack
+
+                    # 根据攻击类型设置风险分数和等级(使用英文)
+                    if is_attack:
+                        if detected_attack in ["越狱攻击", "数据泄露"]:
+                            risk_score = 0.9
+                            risk_level = "critical"
+                        elif detected_attack == "提示词注入":
+                            risk_score = 0.8
+                            risk_level = "high"
+                        else:
+                            risk_score = 0.6
+                            risk_level = "medium"
+                    else:
+                        risk_score = 0.1
+                        risk_level = "low"
+
+                    # 攻击类型直接使用中文
+                    threat_category = detected_attack
+
+    processing_time_ms = int((time.time() - start_time) * 1000)
+
+    # 构建响应 - 匹配前端期望的数据结构
+    attack_types_list = [threat_category] if threat_category else []
+
+    response_data = {
+        "id": f"req_{uuid.uuid4().hex[:24]}",
+        "text": text,
+        "timestamp": datetime.now().isoformat() + "Z",
+        "is_compliant": is_compliant,
+        "risk_score": risk_score,
+        "risk_level": risk_level,
+        "attack_types": attack_types_list,
+        "confidence": 0.9 if is_attack else 0.95,
+        "detection_time": processing_time_ms,
+        "processing_time": processing_time_ms,
+        "details": {
+            "static_analysis": {
+                "matched_keywords": matched_keywords,
+                "matched_patterns": matched_keywords,
+                "blacklisted": is_attack
+            },
+            "semantic_analysis": {
+                "intent": threat_category if threat_category else "normal",
+                "category": threat_category if threat_category else "normal",
+                "similarity_score": risk_score
+            },
+            "behavioral_analysis": {
+                "role_playing_detected": "角色" in text or "role" in text.lower(),
+                "jailbreak_attempt": "越狱" in text or "jailbreak" in text.lower(),
+                "prompt_injection": is_attack
+            }
+        },
+        "recommendation": "block" if is_attack else "pass",
+        "processing_time_ms": processing_time_ms
+    }
+
+    # 记录API调用（异步，不阻塞响应）
+    try:
+        # 获取API Key ID
+        api_key_id = f"key_{hashlib.md5(api_key.encode()).hexdigest()[:16]}"
+
+        log_api_call(
+            user_id=user_id,
+            api_key_id=api_key_id,
+            endpoint="/api/v1/detection/detect",
+            method="POST",
+            request_text=text,
+            request_body=request,
+            response_status=200,
+            response_body=response_data,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            is_compliant=is_compliant,
+            threat_category=threat_category if threat_category else "normal",
+            processing_time_ms=processing_time_ms,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+    except Exception as e:
+        print(f"记录API调用失败: {e}")
+
+    return response_data
+
+# 清空检测数据的API（仅用于测试）
+@app.post("/api/v1/debug/clear-logs")
+async def clear_detection_logs():
+    """清空所有检测日志 - 仅用于开发测试"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return {"success": False, "message": "数据库连接失败"}
+
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM api_call_logs")
+        deleted_count = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        print(f"[DEBUG] 已清空 api_call_logs 表,删除了 {deleted_count} 条记录")
+        return {"success": True, "message": f"已删除 {deleted_count} 条记录"}
+    except Exception as e:
+        print(f"清空数据失败: {e}")
+        return {"success": False, "message": str(e)}
 
 # ===== 用户中心API接口 =====
 
@@ -1470,54 +2099,7 @@ async def recharge(
 
     return {"message": "充值成功", "bill": new_bill}
 
-# 实名认证API
-class VerificationCreate(BaseModel):
-    real_name: str
-    id_card: str
-    phone: str
-
-@app.post("/api/v1/user/verify")
-async def submit_verification(
-    verification_data: VerificationCreate,
-    current_user: dict = Depends(get_current_user)
-):
-    """提交实名认证 - 直接验证,无需审核"""
-    # 验证身份证号格式
-    id_card = verification_data.id_card
-    if not validate_id_card_format(id_card):
-        raise HTTPException(status_code=400, detail="身份证号格式不正确")
-
-    # 验证手机号格式
-    if not len(verification_data.phone) == 11 or not verification_data.phone.startswith('1'):
-        raise HTTPException(status_code=400, detail="手机号格式不正确")
-
-    verification_id = f"verify_{int(time.time())}"
-
-    new_verification = {
-        "id": verification_id,
-        "user_id": current_user["user_id"],
-        "real_name": verification_data.real_name,
-        "id_card": id_card,
-        "phone": verification_data.phone,
-        "status": "approved",  # 直接通过
-        "create_time": datetime.now().isoformat()
-    }
-
-    verifications_db[verification_id] = new_verification
-
-    # 更新用户认证状态
-    user = users_db.get(current_user["user_id"])
-    if user:
-        user["verified"] = True
-        user["real_name"] = verification_data.real_name
-        user["phone"] = verification_data.phone
-        user["id_card"] = id_card
-
-    return {
-        "message": "实名认证成功",
-        "verification_id": verification_id,
-        "status": "approved"
-    }
+# 实名认证API - 已移除旧实现,使用新实现(line 2098)
 
 def validate_id_card_format(id_card: str) -> bool:
     """验证身份证号格式"""
@@ -1954,6 +2536,716 @@ async def update_ticket(
     ticket["updated_at"] = datetime.now().isoformat()
 
     return ticket
+
+# 系统设置API
+@app.get("/api/v1/settings")
+async def get_settings(current_user: dict = Depends(get_current_user)):
+    """获取系统设置"""
+    user_id = current_user["user_id"]
+
+    # 如果用户没有设置,返回默认值
+    if user_id not in settings_db:
+        return {
+            "general": {
+                "appName": "LLM安全检测工具",
+                "autoRefresh": True,
+                "refreshInterval": 30,
+                "enableNotifications": True,
+                "language": "zh-CN",
+            },
+            "api": {
+                "apiBaseUrl": "http://localhost:8000",
+                "apiTimeout": 30,
+                "enableWs": True,
+                "wsUrl": "ws://localhost:8000/ws",
+                "wsReconnectInterval": 5,
+            },
+            "detection": {
+                "defaultDetectionLevel": "standard",
+                "enableRealtimeDetection": True,
+                "enableBatchDetection": True,
+                "maxBatchSize": 100,
+                "enableCache": True,
+                "cacheTtl": 3600,
+                "riskThresholdLow": 0.3,
+                "riskThresholdMedium": 0.5,
+                "riskThresholdHigh": 0.8,
+            },
+        }
+
+    return settings_db[user_id]
+
+@app.post("/api/v1/settings")
+async def save_settings(
+    settings_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """保存系统设置"""
+    user_id = current_user["user_id"]
+
+    # 保存设置
+    settings_db[user_id] = settings_data
+
+    return {
+        "message": "设置保存成功",
+        "settings": settings_data
+    }
+
+@app.get("/api/v1/settings/{category}")
+async def get_settings_category(
+    category: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """获取特定类别的设置"""
+    user_id = current_user["user_id"]
+
+    # 获取所有设置
+    all_settings = await get_settings(current_user)
+
+    # 返回指定类别
+    if category in all_settings:
+        return all_settings[category]
+    else:
+        raise HTTPException(status_code=404, detail="设置类别不存在")
+
+# 账号信息管理API
+# API调用记录相关API
+@app.get("/api/v1/user/api-logs")
+async def get_api_logs(
+    page: int = 1,
+    page_size: int = 10,
+    start_date: str = None,
+    end_date: str = None,
+    risk_level: str = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    获取用户的API调用记录
+    支持分页、日期范围筛选和风险等级筛选
+    """
+    user_id = current_user["user_id"]
+
+    try:
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(status_code=500, detail="数据库连接失败")
+
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 构建查询条件
+        where_conditions = ["user_id = %s"]
+        params = [user_id]
+
+        if start_date:
+            where_conditions.append("call_time >= %s")
+            params.append(start_date)
+
+        if end_date:
+            where_conditions.append("call_time <= %s")
+            params.append(end_date)
+
+        if risk_level:
+            where_conditions.append("risk_level = %s")
+            params.append(risk_level)
+
+        where_clause = " AND ".join(where_conditions)
+
+        # 查询总数
+        count_query = f"SELECT COUNT(*) as total FROM api_call_logs WHERE {where_clause}"
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()["total"]
+
+        # 查询分页数据
+        offset = (page - 1) * page_size
+        data_query = f"""
+            SELECT * FROM api_call_logs
+            WHERE {where_clause}
+            ORDER BY call_time DESC
+            LIMIT %s OFFSET %s
+        """
+        cursor.execute(data_query, params + [page_size, offset])
+        logs = cursor.fetchall()
+
+        # 转换JSONB字段
+        for log in logs:
+            if log.get("request_body"):
+                log["request_body"] = json.loads(log["request_body"]) if isinstance(log["request_body"], str) else log["request_body"]
+            if log.get("response_body"):
+                log["response_body"] = json.loads(log["response_body"]) if isinstance(log["response_body"], str) else log["response_body"]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "items": logs,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size
+        }
+
+    except Exception as e:
+        print(f"获取API调用记录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取API调用记录失败: {str(e)}")
+
+
+@app.get("/api/v1/user/api-logs/stats")
+async def get_api_logs_stats(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    获取用户的API调用统计信息
+    包括总调用次数、风险分布、威胁类别统计等
+    """
+    user_id = current_user["user_id"]
+
+    try:
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(status_code=500, detail="数据库连接失败")
+
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 计算时间范围
+        from datetime import timedelta
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # 总调用次数
+        cursor.execute(
+            """SELECT COUNT(*) as total_calls FROM api_call_logs
+               WHERE user_id = %s AND call_time >= %s""",
+            (user_id, start_date)
+        )
+        total_calls = cursor.fetchone()["total_calls"]
+
+        # 按风险等级统计
+        cursor.execute(
+            """SELECT risk_level, COUNT(*) as count FROM api_call_logs
+               WHERE user_id = %s AND call_time >= %s
+               GROUP BY risk_level""",
+            (user_id, start_date)
+        )
+        risk_distribution = {row["risk_level"]: row["count"] for row in cursor.fetchall()}
+
+        # 按威胁类别统计
+        cursor.execute(
+            """SELECT threat_category, COUNT(*) as count FROM api_call_logs
+               WHERE user_id = %s AND call_time >= %s AND threat_category IS NOT NULL
+               GROUP BY threat_category
+               ORDER BY count DESC
+               LIMIT 10""",
+            (user_id, start_date)
+        )
+        threat_categories = [{row["threat_category"]: row["count"]} for row in cursor.fetchall()]
+
+        # 合规性统计
+        cursor.execute(
+            """SELECT
+               COUNT(*) FILTER (WHERE is_compliant = true) as compliant_calls,
+               COUNT(*) FILTER (WHERE is_compliant = false) as non_compliant_calls
+               FROM api_call_logs
+               WHERE user_id = %s AND call_time >= %s""",
+            (user_id, start_date)
+        )
+        compliance_stats = cursor.fetchone()
+
+        # 平均处理时间
+        cursor.execute(
+            """SELECT AVG(processing_time_ms) as avg_processing_time
+               FROM api_call_logs
+               WHERE user_id = %s AND call_time >= %s""",
+            (user_id, start_date)
+        )
+        avg_processing_time = cursor.fetchone()["avg_processing_time"] or 0
+
+        # 按日期统计调用次数（最近7天）
+        cursor.execute(
+            """SELECT DATE(call_time) as date, COUNT(*) as count
+               FROM api_call_logs
+               WHERE user_id = %s AND call_time >= %s
+               GROUP BY DATE(call_time)
+               ORDER BY date DESC
+               LIMIT 7""",
+            (user_id, start_date)
+        )
+        daily_calls = [
+            {"date": str(row["date"]), "count": row["count"]}
+            for row in cursor.fetchall()
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "period_days": days,
+            "total_calls": total_calls,
+            "risk_distribution": risk_distribution,
+            "threat_categories": threat_categories,
+            "compliance_stats": {
+                "compliant_calls": compliance_stats["compliant_calls"] or 0,
+                "non_compliant_calls": compliance_stats["non_compliant_calls"] or 0,
+                "compliance_rate": round(
+                    (compliance_stats["compliant_calls"] or 0) / max(total_calls, 1) * 100, 2
+                )
+            },
+            "performance": {
+                "avg_processing_time_ms": round(avg_processing_time, 2)
+            },
+            "daily_calls": list(reversed(daily_calls))  # 按时间正序排列
+        }
+
+    except Exception as e:
+        print(f"获取API调用统计失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取API调用统计失败: {str(e)}")
+
+
+@app.get("/api/v1/user/api-logs/{log_id}")
+async def get_api_log_detail(
+    log_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    获取单条API调用记录的详情
+    """
+    user_id = current_user["user_id"]
+
+    try:
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(status_code=500, detail="数据库连接失败")
+
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute(
+            """SELECT * FROM api_call_logs
+               WHERE id = %s AND user_id = %s""",
+            (log_id, user_id)
+        )
+        log = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if not log:
+            raise HTTPException(status_code=404, detail="API调用记录不存在")
+
+        # 转换JSONB字段
+        if log.get("request_body"):
+            log["request_body"] = json.loads(log["request_body"]) if isinstance(log["request_body"], str) else log["request_body"]
+        if log.get("response_body"):
+            log["response_body"] = json.loads(log["response_body"]) if isinstance(log["response_body"], str) else log["response_body"]
+
+        return log
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"获取API调用详情失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取API调用详情失败: {str(e)}")
+
+
+@app.get("/api/v1/analysis/threat-heatmap")
+async def get_threat_heatmap(
+    days: int = 7,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    获取威胁热力图数据
+    返回按时间和威胁类型分布的真实数据
+    """
+    user_id = current_user["user_id"]
+
+    try:
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(status_code=500, detail="数据库连接失败")
+
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 计算时间范围
+        from datetime import timedelta
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # 按小时和星期几统计威胁数据
+        cursor.execute(
+            """SELECT
+               EXTRACT(HOUR FROM call_time) as hour,
+               EXTRACT(DOW FROM call_time) as day_of_week,
+               COUNT(*) as count,
+               COUNT(*) FILTER (WHERE is_compliant = false) as threat_count
+               FROM api_call_logs
+               WHERE user_id = %s AND call_time >= %s
+               GROUP BY EXTRACT(HOUR FROM call_time), EXTRACT(DOW FROM call_time)
+               ORDER BY day_of_week, hour""",
+            (user_id, start_date)
+        )
+
+        rows = cursor.fetchall()
+
+        # 构建热力图数据格式: [hour, day, count]
+        heatmap_data = []
+        for row in rows:
+            hour = int(row["hour"])
+            day = int(row["day_of_week"])
+            count = row["threat_count"]  # 使用威胁数量
+            heatmap_data.append([hour, day, count])
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "data": heatmap_data,
+            "total_days": days,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat()
+        }
+
+    except Exception as e:
+        print(f"获取威胁热力图失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取威胁热力图失败: {str(e)}")
+
+
+# 账号信息管理API
+@app.get("/api/v1/user/account")
+async def get_account_info(current_user: dict = Depends(get_current_user)):
+    """获取账号信息 - 从数据库读取最新信息"""
+    user_id = current_user["user_id"]
+
+    # 先从数据库读取用户信息
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            # 数据库表使用 real_name 而不是 full_name
+            cursor.execute(
+                """SELECT user_id, username, email, phone, real_name, company, position,
+                          address, verified, created_at
+                   FROM users WHERE user_id = %s""",
+                (user_id,)
+            )
+            db_user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+
+            if db_user:
+                return {
+                    "user_id": db_user["user_id"],
+                    "username": db_user["username"],
+                    "email": db_user["email"],
+                    "phone": db_user.get("phone", ""),
+                    "full_name": db_user.get("real_name", ""),  # 映射 real_name 到 full_name
+                    "real_name": db_user.get("real_name", ""),
+                    "company": db_user.get("company", ""),
+                    "position": db_user.get("position", ""),
+                    "address": db_user.get("address", ""),
+                    "verified": db_user.get("verified", False),  # 使用verified而不是is_verified
+                    "is_verified": db_user.get("verified", False),  # 保留is以保证兼容性
+                    "created_at": db_user.get("created_at"),
+                }
+        except Exception as e:
+            print(f"从数据库读取用户信息失败: {e}")
+            conn.close()
+            # 继续使用内存数据作为回退
+            pass
+
+    # 回退到内存数据库
+    user = users_db.get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    return {
+        "user_id": user.get("user_id"),
+        "username": user.get("username"),
+        "email": user.get("email"),
+        "phone": user.get("phone", ""),
+        "full_name": user.get("full_name", ""),
+        "real_name": user.get("full_name", ""),  # 添加real_name字段
+        "company": user.get("company", ""),
+        "position": user.get("position", ""),
+        "address": user.get("address", ""),
+        "verified": user.get("is_verified", False),  # 添加verified字段
+        "is_verified": user.get("is_verified", False),
+        "created_at": user.get("created_at"),
+    }
+
+@app.put("/api/v1/user/account")
+async def update_account_info(
+    account_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """更新账号信息"""
+    user_id = current_user["user_id"]
+    user = users_db.get(user_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 更新允许的字段
+    updatable_fields = [
+        "full_name", "phone", "company", "position", "address"
+    ]
+
+    for field in updatable_fields:
+        if field in account_data:
+            user[field] = account_data[field]
+
+    return {
+        "message": "账号信息更新成功",
+        "user": user
+    }
+
+# 实名认证API (使用PostgreSQL数据库)
+@app.get("/api/v1/user/verify")
+async def get_verify_status(current_user: dict = Depends(get_current_user)):
+    """获取实名认证状态"""
+    user_id = current_user["user_id"]
+    conn = get_db_connection()
+
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor()
+
+        # 查询认证记录
+        cursor.execute(
+            "SELECT real_name, id_card, company, position, status, "
+            "reject_reason, submit_time FROM verifications WHERE user_id = %s",
+            (user_id,)
+        )
+        result = cursor.fetchone()
+
+        if result:
+            return {
+                "verified": result[4] == "approved",
+                "status": result[4],
+                "submit_time": result[6].isoformat() if result[6] else None,
+                "real_name": result[0],
+                "id_card": result[1],
+                "company": result[2],
+                "position": result[3],
+                "reject_reason": result[5],
+            }
+        else:
+            # 返回未认证状态
+            return {
+                "verified": False,
+                "status": None,
+                "submit_time": None,
+                "real_name": None,
+                "id_card": None,
+                "company": None,
+                "position": None,
+                "reject_reason": None,
+            }
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.post("/api/v1/user/verify")
+async def submit_verification(
+    verify_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """提交实名认证"""
+    user_id = current_user["user_id"]
+
+    # 验证必填字段
+    real_name = verify_data.get("real_name")
+    id_card = verify_data.get("id_card")
+
+    if not real_name or not real_name.strip():
+        raise HTTPException(status_code=400, detail="请输入真实姓名")
+    if not id_card or not id_card.strip():
+        raise HTTPException(status_code=400, detail="请输入身份证号")
+
+    # 简单验证身份证号格式(18位)
+    if len(id_card) != 18:
+        raise HTTPException(status_code=400, detail="身份证号格式不正确")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor()
+
+        # 检查是否已存在认证记录
+        cursor.execute("SELECT id FROM verifications WHERE user_id = %s", (user_id,))
+        existing = cursor.fetchone()
+
+        verification_id = f"verify_{int(time.time())}_{user_id}"
+
+        if existing:
+            # 更新已有记录
+            cursor.execute(
+                "UPDATE verifications SET "
+                "real_name = %s, id_card = %s, company = %s, position = %s, "
+                "status = 'pending', reject_reason = NULL, submit_time = CURRENT_TIMESTAMP, "
+                "updated_at = CURRENT_TIMESTAMP "
+                "WHERE user_id = %s",
+                (real_name, id_card, verify_data.get("company", ""), verify_data.get("position", ""), user_id)
+            )
+        else:
+            # 插入新记录
+            cursor.execute(
+                "INSERT INTO verifications "
+                "(id, user_id, real_name, id_card, company, position, status, submit_time) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'pending', CURRENT_TIMESTAMP)",
+                (verification_id, user_id, real_name, id_card,
+                 verify_data.get("company", ""), verify_data.get("position", ""))
+            )
+
+        # 同时更新用户表的认证状态
+        cursor.execute(
+            "UPDATE users SET "
+            "real_name = %s, company = %s, position = %s, verified = FALSE, "
+            "update_time = CURRENT_TIMESTAMP "
+            "WHERE user_id = %s",
+            (real_name, verify_data.get("company", ""), verify_data.get("position", ""), user_id)
+        )
+
+        conn.commit()
+
+        # 返回认证信息
+        return {
+            "message": "实名认证申请已提交",
+            "verification": {
+                "verified": False,
+                "status": "pending",
+                "submit_time": datetime.now().isoformat(),
+                "real_name": real_name,
+                "id_card": id_card,
+                "company": verify_data.get("company", ""),
+                "position": verify_data.get("position", ""),
+                "reject_reason": None,
+            }
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"提交认证失败: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ===== 管理员API接口 =====
+
+@app.get("/api/v1/admin/tickets")
+async def admin_get_all_tickets(current_user: dict = Depends(get_current_user)):
+    """管理员获取所有工单列表"""
+    # 检查是否是管理员
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT ticket_id, user_id, title, category, priority, status, description, created_at
+            FROM user_tickets
+            ORDER BY created_at DESC
+        """)
+        tickets = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return {"items": tickets, "total": len(tickets)}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"获取工单列表失败: {str(e)}")
+
+@app.get("/api/v1/admin/verifications")
+async def admin_get_all_verifications(current_user: dict = Depends(get_current_user)):
+    """管理员获取所有实名认证申请"""
+    # 检查是否是管理员
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT id, user_id, real_name, id_card, company, position, status, created_at, updated_at
+            FROM user_verifications
+            ORDER BY created_at DESC
+        """)
+        verifications = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return {"items": verifications, "total": len(verifications)}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"获取认证列表失败: {str(e)}")
+
+@app.post("/api/v1/admin/verifications/{verification_id}/review")
+async def admin_review_verification(
+    verification_id: str,
+    review_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """管理员审核实名认证申请"""
+    # 检查是否是管理员
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+    approved = review_data.get("approved", False)
+    reason = review_data.get("reason", "")
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        cursor = conn.cursor()
+
+        # 更新认证状态
+        status = "approved" if approved else "rejected"
+        cursor.execute("""
+            UPDATE user_verifications
+            SET status = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING user_id
+        """, (status, verification_id))
+
+        result = cursor.fetchone()
+        if not result:
+            conn.close()
+            raise HTTPException(status_code=404, detail="认证申请不存在")
+
+        user_id = result[0]
+
+        # 如果通过审核,更新用户表的verified字段
+        if approved:
+            cursor.execute("""
+                UPDATE users
+                SET verified = true
+                WHERE user_id = %s
+            """, (user_id,))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "message": "审核完成",
+            "status": status
+        }
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"审核失败: {str(e)}")
 
 # 文件上传API
 from fastapi import UploadFile, File

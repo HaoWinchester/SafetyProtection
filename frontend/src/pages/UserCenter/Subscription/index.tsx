@@ -14,9 +14,14 @@ const Subscription: React.FC = () => {
       const data = await userService.getSubscriptionOverview()
       console.log('套餐总览数据:', data)
       setOverview(data)
-    } catch (error) {
-      console.error('加载套餐总览失败:', error)
-      message.error('加载套餐总览失败: ' + (error as Error).message)
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        console.error('加载套餐总览失败:', error)
+        message.error('加载套餐总览失败: ' + (error as Error).message)
+      } else {
+        console.log('套餐总览请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setLoading(false)
     }

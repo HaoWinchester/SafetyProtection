@@ -15,9 +15,14 @@ const Packages: React.FC = () => {
       const data = await userService.getPackages()
       console.log('套餐数据:', data)
       setPackages(data)
-    } catch (error) {
-      console.error('加载套餐列表失败:', error)
-      message.error('加载套餐列表失败: ' + (error as Error).message)
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        console.error('加载套餐列表失败:', error)
+        message.error('加载套餐列表失败: ' + (error as Error).message)
+      } else {
+        console.log('套餐列表请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setLoading(false)
     }
@@ -34,9 +39,14 @@ const Packages: React.FC = () => {
       await userService.subscribePackage(packageId)
       message.success('套餐订阅成功')
       await loadPackages()
-    } catch (error) {
-      console.error('套餐订阅失败:', error)
-      message.error('套餐订阅失败: ' + (error as Error).message)
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        console.error('套餐订阅失败:', error)
+        message.error('套餐订阅失败: ' + (error as Error).message)
+      } else {
+        console.log('套餐订阅请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setSubscribing(null)
     }

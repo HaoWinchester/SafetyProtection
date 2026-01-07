@@ -37,8 +37,11 @@ const Auth: React.FC = () => {
       setLoading(true)
       const response = await userService.getAuthList()
       setAuthList(response.items || [])
-    } catch (error) {
-      message.error('加载授权列表失败')
+    } catch (error: any) {
+      // 如果是静默错误（请求被取消），不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('加载授权列表失败')
+      }
     } finally {
       setLoading(false)
     }
@@ -56,8 +59,13 @@ const Auth: React.FC = () => {
       setModalVisible(false)
       form.resetFields()
       await loadAuthList()
-    } catch (error) {
-      message.error('创建授权应用失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('创建授权应用失败')
+      } else {
+        console.log('创建授权应用请求被取消(重复请求或页面卸载)')
+      }
     }
   }
 
@@ -67,8 +75,13 @@ const Auth: React.FC = () => {
       await userService.deleteAuth(authId)
       message.success('授权应用删除成功')
       await loadAuthList()
-    } catch (error) {
-      message.error('删除授权应用失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('删除授权应用失败')
+      } else {
+        console.log('删除授权应用请求被取消(重复请求或页面卸载)')
+      }
     }
   }
 

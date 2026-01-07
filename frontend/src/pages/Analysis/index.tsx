@@ -3,7 +3,7 @@
  * Data analysis page
  */
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Card,
   Row,
@@ -13,6 +13,9 @@ import {
   Typography,
   Space,
   Select,
+  Spin,
+  Empty,
+  message,
 } from 'antd'
 import {
   BarChartOutlined,
@@ -25,6 +28,7 @@ import dayjs from 'dayjs'
 import { useStatistics } from '@/hooks/useStatistics'
 import { getRiskLevelColor } from '@/utils/helpers'
 import { CHART_COLORS } from '@/utils/constants'
+import api from '@/services/api'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -41,11 +45,38 @@ const Analysis: React.FC = () => {
     end: dayjs().toISOString(),
   })
   const [chartType, setChartType] = useState<'line' | 'bar'>('line')
+  const [heatmapData, setHeatmapData] = useState<any[]>([])
+  const [heatmapLoading, setHeatmapLoading] = useState(false)
 
   const { overview, trends, distribution, loading, refresh } = useStatistics(
     timeRange,
     false
   )
+
+  /**
+   * 加载热力图数据
+   */
+  useEffect(() => {
+    loadHeatmapData()
+  }, [timeRange])
+
+  const loadHeatmapData = async () => {
+    try {
+      setHeatmapLoading(true)
+      const days = Math.ceil((new Date(timeRange.end).getTime() - new Date(timeRange.start).getTime()) / (1000 * 60 * 60 * 24))
+
+      const response = await api.get('/analysis/threat-heatmap', {
+        params: { days }
+      })
+
+      setHeatmapData(response.data.data || [])
+    } catch (error) {
+      console.error('加载热力图数据失败:', error)
+      // 静默失败,不显示错误消息
+    } finally {
+      setHeatmapLoading(false)
+    }
+  }
 
   /**
    * 时间范围变化处理
@@ -136,18 +167,38 @@ const Analysis: React.FC = () => {
    * 渲染风险分布热力图
    */
   const renderRiskHeatmap = () => {
-    if (!distribution) return null
+    if (heatmapLoading) {
+      return (
+        <Card title="风险检测时间分布">
+          <div style={{ textAlign: 'center', padding: '100px 0' }}>
+            <Spin size="large" tip="加载中..." />
+          </div>
+        </Card>
+      )
+    }
+
+    // 检查是否有数据
+    if (!heatmapData || heatmapData.length === 0) {
+      return (
+        <Card title="风险检测时间分布">
+          <div style={{ textAlign: 'center', padding: '100px 0' }}>
+            <Empty
+              description="暂无威胁检测数据"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
+            <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
+              调用检测接口后,数据将自动显示在这里
+            </Text>
+          </div>
+        </Card>
+      )
+    }
 
     const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`)
     const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
-    // 模拟数据
-    const data = []
-    for (let i = 0; i < days.length; i++) {
-      for (let j = 0; j < hours.length; j++) {
-        data.push([j, i, Math.floor(Math.random() * 100)])
-      }
-    }
+    // 计算最大值用于visualMap
+    const maxCount = Math.max(...heatmapData.map((item) => item[2]), 1)
 
     const option = {
       title: {
@@ -180,7 +231,7 @@ const Analysis: React.FC = () => {
       },
       visualMap: {
         min: 0,
-        max: 100,
+        max: maxCount,
         calculable: true,
         orient: 'horizontal',
         left: 'center',
@@ -193,7 +244,7 @@ const Analysis: React.FC = () => {
         {
           name: '检测次数',
           type: 'heatmap',
-          data: data,
+          data: heatmapData,
           label: {
             show: false,
           },

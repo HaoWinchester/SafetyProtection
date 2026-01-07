@@ -45,10 +45,14 @@ CREATE TABLE IF NOT EXISTS verifications (
     user_id VARCHAR(255) NOT NULL UNIQUE,
     real_name VARCHAR(255) NOT NULL,
     id_card VARCHAR(255) NOT NULL,
-    phone VARCHAR(50) NOT NULL,
+    company VARCHAR(255),
+    position VARCHAR(255),
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    reason TEXT,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reject_reason TEXT,
+    submit_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    review_time TIMESTAMP,
+    reviewer_id VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

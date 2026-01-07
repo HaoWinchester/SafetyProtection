@@ -40,6 +40,21 @@ const showErrorIfNeeded = (errorMsg: string, error: any) => {
   }
 }
 
+/**
+ * 统一的错误处理包装器
+ * 用于数据获取类方法,当请求被取消时不显示错误消息
+ */
+const handleGetDataError = (error: any, actionName: string) => {
+  // 如果是取消的请求(重复请求被阻止),不显示错误消息
+  if (shouldSuppressErrorMessage(error)) {
+    console.log(`${actionName}请求被取消(重复请求)`)
+    throw error
+  }
+  console.error(`${actionName}失败:`, error)
+  showErrorIfNeeded(`${actionName}失败`, error)
+  throw error
+}
+
 export interface UserInfo {
   id: string
   username: string
@@ -113,7 +128,7 @@ class UserService {
   async updateUserInfo(data: Partial<UserInfo>): Promise<UserInfo> {
     try {
       const response = await api.put('/user/info', data)
-      message.success('个人信息更新成功')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('个人信息更新失败', error)
@@ -130,7 +145,7 @@ class UserService {
   }): Promise<void> {
     try {
       await api.post('/user/change-password', data)
-      message.success('密码修改成功')
+      // 不在这里显示成功消息,由调用方控制
     } catch (error) {
       showErrorIfNeeded('密码修改失败', error)
       throw error
@@ -169,7 +184,7 @@ class UserService {
   }): Promise<Project> {
     try {
       const response = await api.post('/user/projects', data)
-      message.success('项目创建成功')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('项目创建失败', error)
@@ -187,7 +202,7 @@ class UserService {
   }): Promise<Project> {
     try {
       const response = await api.put(`/user/projects/${id}`, data)
-      message.success('项目更新成功')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('项目更新失败', error)
@@ -201,7 +216,7 @@ class UserService {
   async deleteProject(id: string): Promise<void> {
     try {
       await api.delete(`/user/projects/${id}`)
-      message.success('项目删除成功')
+      // 不在这里显示成功消息,由调用方控制
     } catch (error) {
       showErrorIfNeeded('项目删除失败', error)
       throw error
@@ -214,7 +229,7 @@ class UserService {
   async regenerateApiKey(id: string): Promise<{ apiKey: string }> {
     try {
       const response = await api.post(`/user/projects/${id}/regenerate-apikey`)
-      message.success('API Key重新生成成功')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('API Key重新生成失败', error)
@@ -251,7 +266,7 @@ class UserService {
   }): Promise<void> {
     try {
       await api.post('/user/recharge', data)
-      message.success('充值成功')
+      // 不在这里显示成功消息,由调用方控制
     } catch (error) {
       showErrorIfNeeded('充值失败', error)
       throw error
@@ -286,7 +301,11 @@ class UserService {
     try {
       const response = await api.get('/user/account')
       return response.data
-    } catch (error) {
+    } catch (error: any) {
+      // 如果是静默错误（请求被取消），不显示错误消息
+      if (error?.silent || error?.isCanceled) {
+        throw error
+      }
       console.error('获取账号信息失败:', error)
       throw error
     }
@@ -298,7 +317,7 @@ class UserService {
   async updateAccountInfo(data: any): Promise<void> {
     try {
       await api.put('/user/account', data)
-      message.success('账号信息更新成功')
+      // 不在这里显示成功消息,由调用方控制
     } catch (error) {
       showErrorIfNeeded('账号信息更新失败', error)
       throw error
@@ -316,7 +335,7 @@ class UserService {
   }): Promise<any> {
     try {
       const response = await api.post('/user/verify', data)
-      message.success('实名认证申请已提交')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('提交实名认证失败', error)
@@ -329,9 +348,13 @@ class UserService {
    */
   async getVerifyStatus(): Promise<any> {
     try {
-      const response = await api.get('/user/verify-status')
+      const response = await api.get('/user/verify')
       return response.data
-    } catch (error) {
+    } catch (error: any) {
+      // 如果是静默错误（请求被取消），不显示错误消息
+      if (error?.silent || error?.isCanceled) {
+        throw error
+      }
       console.error('获取实名认证状态失败:', error)
       throw error
     }
@@ -344,7 +367,11 @@ class UserService {
     try {
       const response = await api.get('/user/auth')
       return response.data
-    } catch (error) {
+    } catch (error: any) {
+      // 如果是静默错误（请求被取消），不显示错误消息
+      if (error?.silent || error?.isCanceled) {
+        throw error
+      }
       console.error('获取授权列表失败:', error)
       throw error
     }
@@ -361,7 +388,7 @@ class UserService {
   }): Promise<any> {
     try {
       const response = await api.post('/user/auth', data)
-      message.success('授权应用创建成功')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('创建授权应用失败', error)
@@ -375,7 +402,7 @@ class UserService {
   async deleteAuth(authId: string): Promise<void> {
     try {
       await api.delete(`/user/auth/${authId}`)
-      message.success('授权应用删除成功')
+      // 不在这里显示成功消息,由调用方控制
     } catch (error) {
       showErrorIfNeeded('删除授权应用失败', error)
       throw error
@@ -390,7 +417,13 @@ class UserService {
       const response = await api.get('/user/subscription/overview')
       return response.data
     } catch (error) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (shouldSuppressErrorMessage(error)) {
+        console.log('套餐总览请求被取消(重复请求)')
+        throw error
+      }
       console.error('获取套餐总览失败:', error)
+      showErrorIfNeeded('获取套餐总览失败', error)
       throw error
     }
   }
@@ -403,7 +436,13 @@ class UserService {
       const response = await api.get('/user/packages')
       return response.data
     } catch (error) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (shouldSuppressErrorMessage(error)) {
+        console.log('套餐列表请求被取消(重复请求)')
+        throw error
+      }
       console.error('获取套餐列表失败:', error)
+      showErrorIfNeeded('获取套餐列表失败', error)
       throw error
     }
   }
@@ -416,7 +455,7 @@ class UserService {
       const response = await api.post('/user/packages/subscribe', null, {
         params: { package_id: packageId }
       })
-      message.success('套餐订阅成功')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('套餐订阅失败', error)
@@ -430,7 +469,7 @@ class UserService {
   async cancelSubscription(): Promise<void> {
     try {
       await api.post('/user/packages/cancel')
-      message.success('套餐已取消')
+      // 不在这里显示成功消息,由调用方控制
     } catch (error) {
       showErrorIfNeeded('取消套餐失败', error)
       throw error
@@ -447,7 +486,13 @@ class UserService {
       })
       return response.data
     } catch (error) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (shouldSuppressErrorMessage(error)) {
+        console.log('用量统计请求被取消(重复请求)')
+        throw error
+      }
       console.error('获取用量统计失败:', error)
+      showErrorIfNeeded('获取用量统计失败', error)
       throw error
     }
   }
@@ -460,7 +505,13 @@ class UserService {
       const response = await api.get('/user/benefits')
       return response.data
     } catch (error) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (shouldSuppressErrorMessage(error)) {
+        console.log('用户权益请求被取消(重复请求)')
+        throw error
+      }
       console.error('获取用户权益失败:', error)
+      showErrorIfNeeded('获取用户权益失败', error)
       throw error
     }
   }
@@ -477,7 +528,13 @@ class UserService {
       const response = await api.get('/user/tickets', { params })
       return response.data
     } catch (error) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (shouldSuppressErrorMessage(error)) {
+        console.log('工单列表请求被取消(重复请求)')
+        throw error
+      }
       console.error('获取工单列表失败:', error)
+      showErrorIfNeeded('获取工单列表失败', error)
       throw error
     }
   }
@@ -493,7 +550,7 @@ class UserService {
   }): Promise<any> {
     try {
       const response = await api.post('/user/tickets', data)
-      message.success('工单创建成功')
+      // 不在这里显示成功消息,由调用方控制
       return response.data
     } catch (error) {
       showErrorIfNeeded('创建工单失败', error)
@@ -523,7 +580,7 @@ class UserService {
   }): Promise<void> {
     try {
       await api.put(`/user/tickets/${ticketId}`, data)
-      message.success('工单更新成功')
+      // 不在这里显示成功消息,由调用方控制
     } catch (error) {
       showErrorIfNeeded('更新工单失败', error)
       throw error
@@ -539,6 +596,65 @@ class UserService {
       return response.data
     } catch (error) {
       console.error('获取常见问题失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取API调用记录
+   */
+  async getApiLogs(params?: {
+    page?: number
+    page_size?: number
+    start_date?: string
+    end_date?: string
+    risk_level?: string
+  }): Promise<any> {
+    try {
+      const response = await api.get('/user/api-logs', { params })
+      return response.data
+    } catch (error) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (shouldSuppressErrorMessage(error)) {
+        console.log('API调用记录请求被取消(重复请求)')
+        throw error
+      }
+      console.error('获取API调用记录失败:', error)
+      showErrorIfNeeded('获取API调用记录失败', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取API调用统计
+   */
+  async getApiLogsStats(days: number = 30): Promise<any> {
+    try {
+      const response = await api.get('/user/api-logs/stats', {
+        params: { days }
+      })
+      return response.data
+    } catch (error) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (shouldSuppressErrorMessage(error)) {
+        console.log('API调用统计请求被取消(重复请求)')
+        throw error
+      }
+      console.error('获取API调用统计失败:', error)
+      showErrorIfNeeded('获取API调用统计失败', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取API调用详情
+   */
+  async getApiLogDetail(logId: string): Promise<any> {
+    try {
+      const response = await api.get(`/user/api-logs/${logId}`)
+      return response.data
+    } catch (error) {
+      console.error('获取API调用详情失败:', error)
       throw error
     }
   }

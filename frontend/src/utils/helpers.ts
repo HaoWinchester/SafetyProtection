@@ -79,6 +79,16 @@ export function getRiskLevelColor(level: RiskLevel): string {
 }
 
 /**
+ * 根据风险分数获取颜色
+ */
+export function getRiskScoreColor(score: number): string {
+  if (score <= 0.3) return '#52c41a'  // 低风险 - 绿色
+  if (score <= 0.5) return '#faad14'  // 中风险 - 黄色
+  if (score <= 0.8) return '#ff4d4f'  // 高风险 - 红色
+  return '#cf1322'                   // 严重风险 - 深红色
+}
+
+/**
  * 获取风险等级标签
  */
 export function getRiskLevelLabel(level: RiskLevel): string {

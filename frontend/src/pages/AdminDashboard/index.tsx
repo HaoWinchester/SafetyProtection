@@ -15,7 +15,8 @@ import {
   message,
   Tag,
   Space,
-  Popconfirm
+  Popconfirm,
+  Tabs
 } from 'antd';
 import {
   UserOutlined,
@@ -24,11 +25,15 @@ import {
   SafetyOutlined,
   PlusOutlined,
   EditOutlined,
-  DeleteOutlined
+  DeleteOutlined,
+  CustomerServiceOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { authAxios } from '../../services/auth';
 import { useRefreshData } from '../../hooks/useRefreshData';
+import TicketManagement from './TicketManagement';
+import VerificationManagement from './VerificationManagement';
 
 import './AdminDashboard.css';
 
@@ -63,6 +68,7 @@ const AdminDashboard: React.FC = () => {
   const [quotaModalVisible, setQuotaModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserInfo | null>(null);
   const [quotaForm] = Form.useForm();
+  const [activeTab, setActiveTab] = useState('users');
 
   // Fetch users
   const fetchUsers = async () => {
@@ -187,6 +193,69 @@ const AdminDashboard: React.FC = () => {
     },
   ];
 
+  const tabItems = [
+    {
+      key: 'users',
+      label: (
+        <span>
+          <TeamOutlined />
+          用户管理
+        </span>
+      ),
+      children: (
+        <>
+          {/* User Management */}
+          <Card
+            title="用户列表"
+            extra={
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={fetchUsers}
+                loading={loading}
+              >
+                刷新
+              </Button>
+            }
+          >
+            <Table
+              columns={userColumns}
+              dataSource={users}
+              rowKey="user_id"
+              loading={loading}
+              pagination={{
+                pageSize: 20,
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 个用户`,
+              }}
+              scroll={{ x: 1200 }}
+            />
+          </Card>
+        </>
+      ),
+    },
+    {
+      key: 'tickets',
+      label: (
+        <span>
+          <CustomerServiceOutlined />
+          工单管理
+        </span>
+      ),
+      children: <TicketManagement />,
+    },
+    {
+      key: 'verifications',
+      label: (
+        <span>
+          <CheckCircleOutlined />
+          实名认证审核
+        </span>
+      ),
+      children: <VerificationManagement />,
+    },
+  ];
+
   return (
     <div className="admin-dashboard">
       <div className="dashboard-header">
@@ -242,32 +311,12 @@ const AdminDashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* User Management */}
-      <Card
-        title="用户管理"
-        extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={fetchUsers}
-            loading={loading}
-          >
-            刷新
-          </Button>
-        }
-        style={{ marginTop: 16 }}
-      >
-        <Table
-          columns={userColumns}
-          dataSource={users}
-          rowKey="user_id"
-          loading={loading}
-          pagination={{
-            pageSize: 20,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 个用户`,
-          }}
-          scroll={{ x: 1200 }}
+      {/* Tabs for different management sections */}
+      <Card style={{ marginTop: 16 }}>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={tabItems}
         />
       </Card>
 

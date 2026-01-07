@@ -26,6 +26,7 @@ import {
   CheckCircleOutlined,
   WarningOutlined,
   CloseCircleOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons'
 import { useDetection } from '@/hooks/useDetection'
 import { DetectionLevel, RiskLevel } from '@/types'
@@ -88,7 +89,8 @@ const RealtimeDetection: React.FC = () => {
             </Tag>
           </Space>
         }
-        style={{ marginTop: 24 }}
+        style={{ height: '100%' }}
+        bodyStyle={{ height: 'calc(100% - 57px)', overflowY: 'auto' }}
       >
         {/* 风险等级 */}
         <Alert
@@ -283,19 +285,131 @@ const RealtimeDetection: React.FC = () => {
           {result ? (
             renderResult()
           ) : (
-            <Card style={{ height: '100%', minHeight: 400 }}>
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                height: '100%',
-                color: '#999'
-              }}>
-                <ScanOutlined style={{ fontSize: 64, marginBottom: 16 }} />
-                <Paragraph type="secondary">
-                  在左侧输入文本并点击"开始检测"按钮进行安全检测
+            <Card
+              title={
+                <Space>
+                  <SafetyOutlined style={{ color: '#1890ff' }} />
+                  <span>检测能力介绍</span>
+                </Space>
+              }
+              style={{ height: '100%', minHeight: 400 }}
+            >
+              <div style={{ padding: '8px 0' }}>
+                <Paragraph>
+                  <Text strong>基于多层检测架构的AI安全防护系统</Text>
+                  {' '}可识别和防御多种大模型安全威胁，保障您的AI应用安全。
                 </Paragraph>
+
+                <Divider orientation="left">支持的攻击类型检测</Divider>
+
+                <Collapse
+                  bordered={false}
+                  defaultActiveKey={['1']}
+                  items={[
+                    {
+                      key: '1',
+                      label: (
+                        <Space>
+                          <Tag color="red">高危</Tag>
+                          <span>角色劫持攻击</span>
+                        </Space>
+                      ),
+                      children: (
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                          <li>忽略之前的指令</li>
+                          <li>开发者模式切换</li>
+                          <li>权限提升尝试</li>
+                          <li>系统提示劫持</li>
+                        </ul>
+                      ),
+                    },
+                    {
+                      key: '2',
+                      label: (
+                        <Space>
+                          <Tag color="orange">高危</Tag>
+                          <span>越狱攻击</span>
+                        </Space>
+                      ),
+                      children: (
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                          <li>DAN模式</li>
+                          <li>无限制模式</li>
+                          <li>规则绕过</li>
+                          <li>越狱提示词</li>
+                        </ul>
+                      ),
+                    },
+                    {
+                      key: '3',
+                      label: (
+                        <Space>
+                          <Tag color="purple">中危</Tag>
+                          <span>数据提取攻击</span>
+                        </Space>
+                      ),
+                      children: (
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                          <li>训练数据泄露</li>
+                          <li>系统提示提取</li>
+                          <li>敏感信息探测</li>
+                        </ul>
+                      ),
+                    },
+                    {
+                      key: '4',
+                      label: (
+                        <Space>
+                          <Tag color="blue">中危</Tag>
+                          <span>间接注入攻击</span>
+                        </Space>
+                      ),
+                      children: (
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                          <li>翻译指令注入</li>
+                          <li>格式化操纵</li>
+                          <li>上下文污染</li>
+                        </ul>
+                      ),
+                    },
+                    {
+                      key: '5',
+                      label: (
+                        <Space>
+                          <Tag color="cyan">低危</Tag>
+                          <span>其他攻击类型</span>
+                        </Space>
+                      ),
+                      children: (
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                          <li>社会工程攻击</li>
+                          <li>编码绕过</li>
+                          <li>多语言攻击</li>
+                          <li>对抗样本</li>
+                        </ul>
+                      ),
+                    },
+                  ]}
+                  style={{ background: 'transparent' }}
+                />
+
+                <Divider style={{ margin: '16px 0' }} />
+
+                <Alert
+                  message="开始使用"
+                  description={
+                    <Space direction="vertical" size="small">
+                      <Text type="secondary">
+                        在左侧输入要检测的文本内容，系统将自动识别潜在的安全威胁。
+                      </Text>
+                      <Text type="secondary">
+                        支持多种检测级别，可在上方选择合适的灵敏度。
+                      </Text>
+                    </Space>
+                  }
+                  type="info"
+                  showIcon
+                />
               </div>
             </Card>
           )}

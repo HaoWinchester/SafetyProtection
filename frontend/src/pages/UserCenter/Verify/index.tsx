@@ -40,8 +40,11 @@ const Verify: React.FC = () => {
       setLoading(true)
       const status = await userService.getVerifyStatus()
       setVerifyStatus(status)
-    } catch (error) {
-      message.error('加载认证状态失败')
+    } catch (error: any) {
+      // 如果是静默错误（请求被取消），不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('加载认证状态失败')
+      }
     } finally {
       setLoading(false)
     }
@@ -58,8 +61,13 @@ const Verify: React.FC = () => {
       await userService.submitVerification(values)
       message.success('实名认证申请已提交,请等待审核')
       await loadVerifyStatus()
-    } catch (error) {
-      message.error('提交实名认证失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('提交实名认证失败')
+      } else {
+        console.log('提交实名认证请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setLoading(false)
     }

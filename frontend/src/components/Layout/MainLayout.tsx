@@ -81,11 +81,11 @@ const MainLayout: React.FC = () => {
         icon: <BarChartOutlined />,
         label: '数据分析',
       },
-      {
-        key: '/monitor',
-        icon: <MonitorOutlined />,
-        label: '系统监控',
-      },
+      // {
+      //   key: '/monitor',
+      //   icon: <MonitorOutlined />,
+      //   label: '系统监控',
+      // },
     ]
 
     // 管理员专属菜单
@@ -211,7 +211,17 @@ const MainLayout: React.FC = () => {
       ],
     })
 
-    baseItems.push({
+    // 设置菜单 - 根据用户角色显示不同的子菜单
+    if (isAdmin) {
+      // 管理员的设置菜单
+      baseItems.push({
+        key: '/settings',
+        icon: <SettingOutlined />,
+        label: '设置',
+      })
+    } else {
+      // 普通用户的设置菜单 - 包含账号、认证等子项
+      baseItems.push({
         key: 'settings',
         icon: <SettingOutlined />,
         label: '设置',
@@ -233,6 +243,7 @@ const MainLayout: React.FC = () => {
           },
         ],
       })
+    }
       
     return baseItems
   }, [isAdmin, isAuthenticated])

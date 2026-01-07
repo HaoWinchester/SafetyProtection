@@ -37,6 +37,7 @@ import UserCenterInvoice from './pages/UserCenter/Invoice/index'
 import UserCenterRecharge from './pages/UserCenter/Recharge/index'
 import Help from './pages/Help/index'
 // import ApiDocs from './pages/ApiDocs/index'
+import AdminVerifyReview from './pages/Admin/VerifyReview/index'
 
 // 懒加载较大的页面组件
 const RealtimeDetection = lazy(() => import('./pages/Detection/Realtime'))
@@ -357,6 +358,16 @@ const App: React.FC = () => {
                 element={
                   <PrivateRoute requireAdmin={true}>
                     <AdminDashboard />
+                  </PrivateRoute>
+                }
+              />
+
+              {/* 管理员实名认证审核 - 需要管理员权限 */}
+              <Route
+                path="admin/verify-review"
+                element={
+                  <PrivateRoute requireAdmin={true}>
+                    <AdminVerifyReview />
                   </PrivateRoute>
                 }
               />

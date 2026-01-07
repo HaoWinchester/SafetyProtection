@@ -38,8 +38,11 @@ const AccountSettings: React.FC = () => {
       const info = await userService.getAccountInfo()
       setAccountInfo(info)
       form.setFieldsValue(info)
-    } catch (error) {
-      message.error('加载账号信息失败')
+    } catch (error: any) {
+      // 如果是静默错误（请求被取消），不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('加载账号信息失败')
+      }
     } finally {
       setLoading(false)
     }
@@ -57,8 +60,13 @@ const AccountSettings: React.FC = () => {
       message.success('账号信息更新成功')
       setEditMode(false)
       await loadAccountInfo()
-    } catch (error) {
-      message.error('账号信息更新失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('账号信息更新失败')
+      } else {
+        console.log('账号信息更新请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setLoading(false)
     }

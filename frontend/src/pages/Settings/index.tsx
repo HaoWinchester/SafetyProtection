@@ -3,7 +3,7 @@
  * System settings page
  */
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Card,
   Tabs,
@@ -20,6 +20,7 @@ import {
   Select,
   InputNumber,
   Alert,
+  Spin,
 } from 'antd'
 import {
   SaveOutlined,
@@ -31,7 +32,10 @@ import {
   DatabaseOutlined,
   BookOutlined,
   CopyOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons'
+import api from '@/services/api'
+import VerificationReviewTab from './VerificationReviewTab'
 
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
@@ -44,6 +48,55 @@ const { TextArea } = Input
 const Settings: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('general')
+  const [settings, setSettings] = useState<any>(null)
+  const [initialLoading, setInitialLoading] = useState(true)
+
+  // 加载设置
+  const loadSettings = async () => {
+    try {
+      setInitialLoading(true)
+      console.log('加载系统设置...')
+      const data = await api.get('/settings')
+      console.log('系统设置数据:', data)
+      setSettings(data)
+    } catch (error) {
+      console.error('加载设置失败:', error)
+      // 使用默认值
+      setSettings({
+        general: {
+          appName: 'LLM安全检测工具',
+          autoRefresh: true,
+          refreshInterval: 30,
+          enableNotifications: true,
+          language: 'zh-CN',
+        },
+        api: {
+          apiBaseUrl: 'http://localhost:8000',
+          apiTimeout: 30,
+          enableWs: true,
+          wsUrl: 'ws://localhost:8000/ws',
+          wsReconnectInterval: 5,
+        },
+        detection: {
+          defaultDetectionLevel: 'standard',
+          enableRealtimeDetection: true,
+          enableBatchDetection: true,
+          maxBatchSize: 100,
+          enableCache: true,
+          cacheTtl: 3600,
+          riskThresholdLow: 0.3,
+          riskThresholdMedium: 0.5,
+          riskThresholdHigh: 0.8,
+        },
+      })
+    } finally {
+      setInitialLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadSettings()
+  }, [])
 
   /**
    * 通用设置表单提交
@@ -51,11 +104,16 @@ const Settings: React.FC = () => {
   const handleGeneralSubmit = async (values: any) => {
     setLoading(true)
     try {
-      // TODO: 调用API保存设置
-      console.log('General settings:', values)
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      message.success('设置保存成功')
+      console.log('保存通用设置:', values)
+      const updatedSettings = {
+        ...settings,
+        general: values,
+      }
+      await api.post('/settings', updatedSettings)
+      setSettings(updatedSettings)
+      message.success('通用设置保存成功')
     } catch (error) {
+      console.error('保存失败:', error)
       message.error('设置保存失败')
     } finally {
       setLoading(false)
@@ -68,11 +126,17 @@ const Settings: React.FC = () => {
   const handleApiSubmit = async (values: any) => {
     setLoading(true)
     try {
-      // TODO: 调用API保存设置
-      console.log('API settings:', values)
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      message.success('设置保存成功')
+      console.log('保存API设置:', values)
+      const updatedSettings = {
+        ...settings,
+        api: values,
+      }
+      await api.post('/settings', updatedSettings)
+      setSettings(updatedSettings)
+      message.success('API设置保存成功')
+      message.info('修改API配置后建议刷新页面')
     } catch (error) {
+      console.error('保存失败:', error)
       message.error('设置保存失败')
     } finally {
       setLoading(false)
@@ -85,15 +149,30 @@ const Settings: React.FC = () => {
   const handleDetectionSubmit = async (values: any) => {
     setLoading(true)
     try {
-      // TODO: 调用API保存设置
-      console.log('Detection settings:', values)
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      message.success('设置保存成功')
+      console.log('保存检测规则设置:', values)
+      const updatedSettings = {
+        ...settings,
+        detection: values,
+      }
+      await api.post('/settings', updatedSettings)
+      setSettings(updatedSettings)
+      message.success('检测规则设置保存成功')
     } catch (error) {
+      console.error('保存失败:', error)
       message.error('设置保存失败')
     } finally {
       setLoading(false)
     }
+  }
+
+  if (initialLoading) {
+    return (
+      <Card>
+        <div style={{ textAlign: 'center', padding: '50px 0' }}>
+          <Spin size="large" tip="加载设置中..." />
+        </div>
+      </Card>
+    )
   }
 
   /**
@@ -104,13 +183,7 @@ const Settings: React.FC = () => {
       <Form
         layout="vertical"
         onFinish={handleGeneralSubmit}
-        initialValues={{
-          appName: 'LLM安全检测工具',
-          autoRefresh: true,
-          refreshInterval: 30,
-          enableNotifications: true,
-          language: 'zh-CN',
-        }}
+        initialValues={settings?.general || {}}
       >
         <Form.Item
           label="应用名称"
@@ -187,13 +260,7 @@ const Settings: React.FC = () => {
       <Form
         layout="vertical"
         onFinish={handleApiSubmit}
-        initialValues={{
-          apiBaseUrl: 'http://localhost:8000',
-          apiTimeout: 30,
-          enableWs: true,
-          wsUrl: 'ws://localhost:8000/ws',
-          wsReconnectInterval: 5,
-        }}
+        initialValues={settings?.api || {}}
       >
         <Alert
           message="API配置"
@@ -287,17 +354,7 @@ const Settings: React.FC = () => {
       <Form
         layout="vertical"
         onFinish={handleDetectionSubmit}
-        initialValues={{
-          defaultDetectionLevel: 'standard',
-          enableRealtimeDetection: true,
-          enableBatchDetection: true,
-          maxBatchSize: 100,
-          enableCache: true,
-          cacheTtl: 3600,
-          riskThresholdLow: 0.3,
-          riskThresholdMedium: 0.5,
-          riskThresholdHigh: 0.8,
-        }}
+        initialValues={settings?.detection || {}}
       >
         <Form.Item
           label="默认检测级别"
@@ -611,6 +668,23 @@ const Settings: React.FC = () => {
               <Text type="secondary">API接口使用说明和示例</Text>
               <Divider />
               {renderApiDocs()}
+            </div>
+          </TabPane>
+
+          <TabPane
+            tab={
+              <span>
+                <SafetyOutlined />
+                实名认证审核
+              </span>
+            }
+            key="verification"
+          >
+            <div style={{ padding: '0 24px' }}>
+              <Title level={4}>实名认证审核</Title>
+              <Text type="secondary">管理用户提交的实名认证申请</Text>
+              <Divider />
+              <VerificationReviewTab />
             </div>
           </TabPane>
         </Tabs>

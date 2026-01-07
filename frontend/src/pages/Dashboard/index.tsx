@@ -12,6 +12,7 @@ import {
   Space,
   Spin,
   Skeleton,
+  Empty,
 } from 'antd'
 import {
   SafetyOutlined,
@@ -24,7 +25,7 @@ import ReactECharts from 'echarts-for-react'
 import dayjs from 'dayjs'
 import StatisticCard from '@/components/Dashboard/StatisticCard'
 import { useStatistics } from '@/hooks/useStatistics'
-import { getRiskLevelColor, formatNumber } from '@/utils/helpers'
+import { getRiskScoreColor, getRiskLevelColor, formatNumber } from '@/utils/helpers'
 import { CHART_COLORS } from '@/utils/constants'
 
 const { Title, Text } = Typography
@@ -72,36 +73,32 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={12} lg={6}>
           <StatisticCard
             title="总检测次数"
-            value={overview.total_detections}
+            value={overview.total_detections || 0}
             prefix={<SafetyOutlined />}
-            trend={5.2}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatisticCard
             title="合规检测"
-            value={overview.compliant_count}
+            value={overview.compliant_count || 0}
             prefix={<CheckCircleOutlined />}
             color="#52c41a"
-            trend={3.8}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatisticCard
             title="风险检测"
-            value={overview.non_compliant_count}
+            value={overview.non_compliant_count || 0}
             prefix={<CloseCircleOutlined />}
             color="#ff4d4f"
-            trend={-2.1}
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatisticCard
             title="平均风险分"
-            value={formatNumber(overview.avg_risk_score)}
+            value={formatNumber(overview.avg_risk_score || 0)}
             prefix={<ClockCircleOutlined />}
-            suffix="%"
-            color="#faad14"
+            color={getRiskScoreColor(overview.avg_risk_score || 0)}
           />
         </Col>
       </Row>
@@ -114,6 +111,25 @@ const Dashboard: React.FC = () => {
   const renderTrendChart = () => {
     if (!trends) {
       return <Spin />
+    }
+
+    // 检查是否有数据
+    const hasData = trends.labels && trends.labels.length > 0 &&
+                   trends.datasets && trends.datasets.length > 0 &&
+                   trends.datasets[0]?.data && trends.datasets[0].data.some((val: number) => val > 0)
+
+    if (!hasData) {
+      return (
+        <div style={{ textAlign: 'center', padding: '100px 0' }}>
+          <Empty
+            description="暂无检测数据"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+          <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
+            调用检测接口后,数据将自动显示在这里
+          </Text>
+        </div>
+      )
     }
 
     const option = {
@@ -166,6 +182,36 @@ const Dashboard: React.FC = () => {
   const renderThreatDistribution = () => {
     if (!distribution) {
       return <Spin />
+    }
+
+    // 检查是否有分布数据
+    const hasAttackData = distribution.attackTypes?.labels &&
+                          distribution.attackTypes.labels.length > 0 &&
+                          distribution.attackTypes.datasets[0]?.data?.some((val: number) => val > 0)
+
+    const hasRiskData = distribution.riskLevels?.labels &&
+                       distribution.riskLevels.labels.length > 0 &&
+                       distribution.riskLevels.datasets[0]?.data?.some((val: number) => val > 0)
+
+    // 如果完全没有数据
+    if (!hasAttackData && !hasRiskData) {
+      return (
+        <Row gutter={[16, 16]}>
+          <Col span={24}>
+            <Card>
+              <div style={{ textAlign: 'center', padding: '100px 0' }}>
+                <Empty
+                  description="暂无威胁分布数据"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+                <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
+                  调用检测接口后,数据将自动显示在这里
+                </Text>
+              </div>
+            </Card>
+          </Col>
+        </Row>
+      )
     }
 
     // 攻击类型分布
@@ -252,12 +298,30 @@ const Dashboard: React.FC = () => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card title="攻击类型分布">
-            <ReactECharts option={attackTypeOption} style={{ height: 350 }} />
+            {hasAttackData ? (
+              <ReactECharts option={attackTypeOption} style={{ height: 350 }} />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '80px 0' }}>
+                <Empty
+                  description="暂无攻击类型数据"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              </div>
+            )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card title="风险等级分布">
-            <ReactECharts option={riskLevelOption} style={{ height: 350 }} />
+            {hasRiskData ? (
+              <ReactECharts option={riskLevelOption} style={{ height: 350 }} />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '80px 0' }}>
+                <Empty
+                  description="暂无风险等级数据"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              </div>
+            )}
           </Card>
         </Col>
       </Row>

@@ -12,8 +12,13 @@ const Benefits: React.FC = () => {
       setLoading(true)
       const data = await userService.getBenefits()
       setBenefits(data)
-    } catch (error) {
-      message.error('加载用户权益失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        message.error('加载用户权益失败')
+      } else {
+        console.log('用户权益请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setLoading(false)
     }

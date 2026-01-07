@@ -15,6 +15,7 @@ import {
   MenuUnfoldOutlined,
   BellOutlined,
   ShoppingCartOutlined,
+  AuditOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import type { MenuProps } from 'antd'
@@ -68,6 +69,11 @@ const Header: React.FC<{
       icon: <SettingOutlined />,
       label: '管理控制台',
       onClick: () => navigate('/admin-dashboard'),
+    }, {
+      key: 'admin-verify',
+      icon: <AuditOutlined />,
+      label: '实名认证审核',
+      onClick: () => navigate('/admin/verify-review'),
     }] : []),
     {
       key: 'settings',

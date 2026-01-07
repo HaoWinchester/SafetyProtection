@@ -49,9 +49,14 @@ const Profile: React.FC = () => {
     try {
       const data = await userService.getUserInfo()
       setUserInfo(data)
-    } catch (error) {
-      console.error('加载用户信息失败:', error)
-      message.error('加载用户信息失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        console.error('加载用户信息失败:', error)
+        message.error('加载用户信息失败')
+      } else {
+        console.log('用户信息请求被取消(重复请求或页面卸载)')
+      }
     }
   }
 
@@ -73,9 +78,14 @@ const Profile: React.FC = () => {
       setEditModalVisible(false)
       // 重新加载用户信息
       await loadUserInfo()
-    } catch (error) {
-      console.error('更新个人信息失败:', error)
-      message.error('更新个人信息失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        console.error('更新个人信息失败:', error)
+        message.error('更新个人信息失败')
+      } else {
+        console.log('更新个人信息请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setLoading(false)
     }
@@ -94,9 +104,14 @@ const Profile: React.FC = () => {
       message.success('密码修改成功,请重新登录')
       setPasswordModalVisible(false)
       passwordForm.resetFields()
-    } catch (error) {
-      console.error('修改密码失败:', error)
-      message.error('修改密码失败')
+    } catch (error: any) {
+      // 如果是取消的请求(重复请求被阻止),不显示错误消息
+      if (!error?.silent && !error?.isCanceled) {
+        console.error('修改密码失败:', error)
+        message.error('修改密码失败')
+      } else {
+        console.log('修改密码请求被取消(重复请求或页面卸载)')
+      }
     } finally {
       setLoading(false)
     }

@@ -93,6 +93,12 @@ const createApiClient = (): AxiosInstance => {
         return Promise.reject(silentError)
       }
 
+      // 检查是否是静默错误(取消的请求)
+      if ((error as any).silent || (error as any).isCanceled) {
+        // 静默处理,不显示任何消息
+        return Promise.reject(error)
+      }
+
       const { response } = error
 
       if (response) {
@@ -125,10 +131,16 @@ const createApiClient = (): AxiosInstance => {
             message.error(data?.message || `请求失败 (${status})`)
         }
       } else if (error.code === 'ECONNABORTED') {
-        message.error('请求超时,请稍后重试')
+        // 仅在非静默错误时显示超时消息
+        if (!(error as any).silent && !(error as any).isCanceled) {
+          message.error('请求超时,请稍后重试')
+        }
         console.error('请求超时:', error.config?.url, error.message)
       } else {
-        message.error('网络错误: ' + (error.message || '未知错误'))
+        // 仅在非静默错误时显示网络错误消息
+        if (!(error as any).silent && !(error as any).isCanceled) {
+          message.error('网络错误: ' + (error.message || '未知错误'))
+        }
         console.error('网络错误详情:', error)
       }
 
