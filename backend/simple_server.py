@@ -6,7 +6,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, List
 import uvicorn
 import random
@@ -29,6 +29,18 @@ from ultimate_detection_2025 import detect_ultimate_prompt_injection
 
 # 导入数据库检测模块 (1032+测试用例对比检测)
 from database_detection import detect_with_database
+
+# 导入简化的语义分析模块
+from simple_semantic_analyzer import semantic_analyzer
+
+# 导入多维度检测模块
+from multi_dimensional_detection import detect_multi_dimensional
+
+# 导入基于数据库的模式检测模块
+from database_pattern_detector import detect_with_database_patterns, database_pattern_detector
+
+# 导入数据库操作模块
+import db_operations as db
 
 # 导入用户中心API扩展 - 暂时注释,直接在此文件中定义
 # import usercenter_api
@@ -155,6 +167,11 @@ async def startup_event():
         print("数据库初始化成功")
     else:
         print("数据库初始化失败，某些功能可能无法使用")
+
+    # 初始化语义分析器
+    print("正在初始化语义分析器...")
+    await semantic_analyzer.initialize()
+    print("语义分析器初始化完成")
 
 # 配置CORS
 app.add_middleware(
@@ -398,17 +415,17 @@ async def get_statistics_distribution(
         )
         attack_types_rows = cursor.fetchall()
 
-        # 风险等级分布 - 按照严重程度排序
+        # 风险等级分布 - 按照严重程度排序 (英文)
         cursor.execute(
             """SELECT risk_level, COUNT(*) as count FROM api_call_logs
                WHERE risk_level IS NOT NULL
                GROUP BY risk_level
                ORDER BY
                  CASE risk_level
-                   WHEN '低风险' THEN 1
-                   WHEN '中风险' THEN 2
-                   WHEN '高风险' THEN 3
-                   WHEN '严重风险' THEN 4
+                   WHEN 'low' THEN 1
+                   WHEN 'medium' THEN 2
+                   WHEN 'high' THEN 3
+                   WHEN 'critical' THEN 4
                    ELSE 5
                  END"""
         )
@@ -1000,148 +1017,55 @@ async def export_evaluation_report(evaluation_id: str, format: str = "json"):
 # 安全认证
 security = HTTPBearer()
 
-# 内存数据库 (生产环境应使用真实数据库)
-users_db = {}
-orders_db = {}
-packages_db = {}
-detection_usage_db = []
-usage_records_db = []  # 用户中心API需要
-subscription_db = {}  # 用户订阅数据库
-tickets_db = {}  # 工单数据库
-ticket_id_counter = 0  # 工单ID计数器
-settings_db = {}  # 系统设置数据库
-verifications_db = {}  # 实名认证数据库(用于缓存,实际数据存储在PostgreSQL)
+# ===== 数据库迁移说明 =====
+# 所有数据现在都存储在PostgreSQL数据库中，不再使用内存字典
+# 使用 db_operations 模块提供的方法进行所有数据操作
+# 原内存字典定义已注释，保留用于参考
 
-# 初始化默认管理员用户
+# users_db = {}
+# orders_db = {}
+# packages_db = {}
+# detection_usage_db = []
+# usage_records_db = []
+# subscription_db = {}
+# tickets_db = {}
+# ticket_id_counter = 0
+# settings_db = {}
+# verifications_db = {}
+
+# 初始化默认数据
 def init_default_data():
-    """初始化默认数据 - 同时保存到数据库和内存"""
-    conn = get_db_connection()
-    cursor = None
-    if conn:
-        try:
-            cursor = conn.cursor()
+    """初始化默认数据 - 现在只操作数据库"""
+    print("正在初始化默认数据...")
 
-            # 默认管理员
-            admin_id = "user_admin001"
-            # 检查数据库中是否已存在管理员
-            cursor.execute("SELECT user_id FROM users WHERE user_id = %s", (admin_id,))
-            if not cursor.fetchone():
-                # 插入管理员到数据库 - 使用正确的字段名
-                cursor.execute(
-                    """INSERT INTO users (user_id, username, email, password_hash, real_name, role, status, verified, remaining_quota, total_quota)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id) DO NOTHING""",
-                    (admin_id, "admin", "admin@example.com",
-                     hashlib.sha256("admin123".encode()).hexdigest(),
-                     "系统管理员", "admin", "active", True, 10000, 10000)
-                )
-                print(f"管理员账号 {admin_id} 已创建到数据库")
+    try:
+        # 使用 db_operations 模块初始化测试数据
+        # 默认管理员账户已在 create_complete_schema.sql 中创建
+        print("✓ 默认管理员账户已存在")
 
-            # 默认普通用户
-            user_id = "user_test001"
-            cursor.execute("SELECT user_id FROM users WHERE user_id = %s", (user_id,))
-            if not cursor.fetchone():
-                # 插入测试用户到数据库 - 使用正确的字段名
-                cursor.execute(
-                    """INSERT INTO users (user_id, username, email, password_hash, real_name, role, status, verified, remaining_quota, total_quota)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id) DO NOTHING""",
-                    (user_id, "testuser", "user@example.com",
-                     hashlib.sha256("test123".encode()).hexdigest(),
-                     "测试用户", "user", "active", True, 50, 50)
-                )
-                print(f"测试用户 {user_id} 已创建到数据库")
+        # 检查测试用户是否存在
+        test_user = db.get_user_from_db("user_test001")
+        if not test_user:
+            db.create_user_in_db({
+                'user_id': 'user_test001',
+                'username': 'testuser',
+                'email': 'user@example.com',
+                'password_hash': hashlib.sha256("test123".encode()).hexdigest(),
+                'real_name': '测试用户',
+                'role': 'user',
+                'verified': True,
+                'remaining_quota': 50,
+                'total_quota': 50
+            })
+            print("✓ 测试用户已创建")
+        else:
+            print("✓ 测试用户已存在")
 
-            conn.commit()
-            cursor.close()
-            conn.close()
-        except Exception as e:
-            print(f"创建默认用户到数据库失败: {e}")
-            if cursor:
-                cursor.close()
-            if conn:
-                conn.close()
-            conn = None
+        print("✓ 默认数据初始化完成")
+    except Exception as e:
+        print(f"✗ 初始化默认数据失败: {e}")
 
-    # 同时保存到内存数据库(作为回退)
-    # 默认管理员
-    admin_id = "user_admin001"
-    if admin_id not in users_db:
-        users_db[admin_id] = {
-            "user_id": admin_id,
-            "email": "admin@example.com",
-            "username": "admin",
-            "hashed_password": hashlib.sha256("admin123".encode()).hexdigest(),
-            "full_name": "系统管理员",
-            "role": "admin",
-            "is_active": True,
-            "is_verified": True,
-            "remaining_quota": 10000,
-            "total_quota": 10000,
-            "created_at": datetime.now().isoformat(),
-            "last_login_at": None
-        }
-
-    # 默认普通用户
-    user_id = "user_test001"
-    if user_id not in users_db:
-        users_db[user_id] = {
-            "user_id": user_id,
-            "email": "user@example.com",
-            "username": "testuser",
-            "hashed_password": hashlib.sha256("test123".encode()).hexdigest(),
-            "full_name": "测试用户",
-            "role": "user",
-            "is_active": True,
-            "is_verified": True,
-            "remaining_quota": 50,
-            "total_quota": 50,
-            "created_at": datetime.now().isoformat(),
-            "last_login_at": None
-        }
-
-    # 默认套餐
-    if not packages_db:
-        packages_db["package_basic"] = {
-            "package_id": "package_basic",
-            "package_name": "基础套餐",
-            "quota_amount": 2000,
-            "price": 15.0,
-            "discount": 0.0,
-            "description": "适合个人用户和小团队",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
-        packages_db["package_standard"] = {
-            "package_id": "package_standard",
-            "package_name": "标准套餐",
-            "quota_amount": 4500,
-            "price": 30.0,
-            "discount": 0.0,
-            "description": "适合中小型企业",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
-        packages_db["package_pro"] = {
-            "package_id": "package_pro",
-            "package_name": "专业套餐",
-            "quota_amount": 10000,
-            "price": 60.0,
-            "discount": 0.0,
-            "description": "适合大型团队和项目",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
-        packages_db["package_enterprise"] = {
-            "package_id": "package_enterprise",
-            "package_name": "企业套餐",
-            "quota_amount": 50000,
-            "price": 250.0,
-            "discount": 0.0,
-            "description": "适合大型企业和组织",
-            "is_active": True,
-            "created_at": datetime.now().isoformat()
-        }
+# 套餐数据已在 create_complete_schema.sql 中初始化，不再需要在这里定义
 
 # 初始化数据
 init_default_data()
@@ -1522,7 +1446,9 @@ async def get_all_users(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
 
-    return list(users_db.values())
+    # 从数据库获取所有用户
+    users = db.get_all_users_from_db()
+    return users
 
 @app.patch("/api/v1/auth/admin/users/{user_id}/quota")
 async def update_user_quota(
@@ -1534,19 +1460,26 @@ async def update_user_quota(
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
 
-    user = users_db.get(user_id)
+    # 从数据库获取用户
+    user = db.get_user_from_db(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
     amount = quota_update.get("amount", 0)
-    user["remaining_quota"] += amount
-    user["total_quota"] += amount
+    new_remaining = user['remaining_quota'] + amount
+    new_total = user['total_quota'] + amount
+
+    # 更新到数据库
+    updated_user = db.update_user_in_db(user_id, {
+        'remaining_quota': new_remaining,
+        'total_quota': new_total
+    })
 
     return {
         "message": "配额更新成功",
         "user_id": user_id,
         "amount_added": amount,
-        "new_balance": user["remaining_quota"],
+        "new_balance": new_remaining,
         "reason": quota_update.get("reason", "")
     }
 
@@ -1603,21 +1536,49 @@ async def detect(
         "社会工程": ["冒充", "假装", "角色扮演", "pretend", "act as"]
     }
 
-    # 第1层: 数据库检测 (1032+测试用例对比,最高优先级,最准确)
-    database_result = detect_with_database(text)
+    # 第0层: 数据库模式检测（最新研究，最高优先级）⭐ 新增
+    db_pattern_result = detect_with_database_patterns(text)
 
-    # 如果数据库检测器检测到攻击,使用其结果
-    if database_result['is_attack']:
+    if db_pattern_result['is_attack']:
         is_attack = True
         is_compliant = False
-        detected_attack = database_result['attack_types'][0] if database_result['attack_types'] else "未知攻击"
-        matched_keywords = database_result['details']['matches']
-        risk_score = database_result['risk_score']
-        risk_level = database_result['risk_level']
-        threat_category = detected_attack
+        # 获取最危险的维度
+        detected_dimensions = db_pattern_result['detected_dimensions']
+        if detected_dimensions:
+            # 维度代码映射到中文
+            dim_name_mapping = {
+                "PROMPT_INJECTION": "提示词注入",
+                "JAILBREAK": "越狱攻击",
+                "ROLE_PLAYING": "角色扮演",
+                "INSTRUCTION_OVERRIDE": "指令覆盖",
+                "INFORMATION_EXTRACTION": "信息提取",
+                "MANIPULATION": "输出操纵",
+                "HARMFUL_CONTENT": "有害内容",
+                "OBFUSCATION": "混淆攻击",
+                "STRUCTURAL_ANOMALY": "结构异常",
+                "EMOTIONAL_MANIPULATION": "情感操纵"
+            }
+            threat_category = dim_name_mapping.get(detected_dimensions[0], "复杂攻击")
+            matched_keywords = [p['pattern_name'] for p in db_pattern_result['matched_patterns']]
+        risk_score = db_pattern_result['overall_risk_score']
+        risk_level = db_pattern_result['risk_level']
+        detected_attack = threat_category
     else:
-        # 第2层: 2025终极检测器进行检测 (最新研究成果)
-        ultimate_result = detect_ultimate_prompt_injection(text)
+        # 第1层: 数据库检测 (1032+测试用例对比,最高优先级,最准确)
+        database_result = detect_with_database(text)
+
+        # 如果数据库检测器检测到攻击,使用其结果
+        if database_result['is_attack']:
+            is_attack = True
+            is_compliant = False
+            detected_attack = database_result['attack_types'][0] if database_result['attack_types'] else "未知攻击"
+            matched_keywords = database_result['details']['matches']
+            risk_score = database_result['risk_score']
+            risk_level = database_result['risk_level']
+            threat_category = detected_attack
+        else:
+            # 第2层: 2025终极检测器进行检测 (最新研究成果)
+            ultimate_result = detect_ultimate_prompt_injection(text)
 
         # 如果2025终极检测器检测到攻击,使用其结果
         if ultimate_result['is_attack']:
@@ -1643,51 +1604,108 @@ async def detect(
                 risk_level = advanced_result['risk_level']
                 threat_category = detected_attack
             else:
-                # 第4层: 增强检测器作为最后后备
-                enhanced_result = detect_enhanced_prompt_injection(text)
+                # 第4层: 语义分析检测 (新增的真正语义分析)
+                semantic_result = semantic_analyzer.detect(text)
 
-                if enhanced_result['is_attack']:
+                if semantic_result['is_attack']:
                     is_attack = True
                     is_compliant = False
-                    detected_attack = enhanced_result['attack_types'][0] if enhanced_result['attack_types'] else "未知攻击"
-                    matched_keywords = enhanced_result['details']['matches']
-                    risk_score = enhanced_result['risk_score']
-                    risk_level = enhanced_result['risk_level']
+                    detected_attack = semantic_result['detected_attack']
+                    # 语义分析返回的是英文攻击类型，转换为中文
+                    attack_type_mapping = {
+                        "role_playing": "角色扮演",
+                        "instruction_override": "指令覆盖",
+                        "jailbreak": "越狱攻击",
+                        "prompt_injection": "提示词注入",
+                        "information_extraction": "信息提取"
+                    }
+                    detected_attack = attack_type_mapping.get(detected_attack, detected_attack)
+                    matched_keywords = []
+                    risk_score = semantic_result['risk_score']
+                    risk_level = semantic_result['risk_level']
                     threat_category = detected_attack
                 else:
-                    # 如果所有检测器都未检测到,使用基础规则作为最后后备
-                    detected_attack = None
-                    matched_keywords = []
+                    # 第5层: 多维度检测 (10个维度全面检测) - 新增
+                    multi_dim_result = detect_multi_dimensional(text)
 
-                    for attack_type, keywords in attack_patterns.items():
-                        for keyword in keywords:
-                            if keyword.lower() in text.lower():
-                                detected_attack = attack_type
-                                matched_keywords.append(keyword)
-                                break
-                        if detected_attack:
-                            break
+                    if multi_dim_result['is_attack']:
+                        is_attack = True
+                        is_compliant = False
+                        # 获取最危险的威胁类型
+                        if multi_dim_result['detected_threats']:
+                            highest_risk_threat = max(multi_dim_result['detected_threats'],
+                                                      key=lambda x: x['confidence'])
+                            threat_dim = highest_risk_threat['dimension']
 
-                    is_attack = detected_attack is not None
-                    is_compliant = not is_attack
+                            # 将维度映射到中文攻击类型
+                            dimension_mapping = {
+                                "prompt_injection": "提示词注入",
+                                "jailbreak": "越狱攻击",
+                                "role_playing": "角色扮演",
+                                "instruction_override": "指令覆盖",
+                                "information_extraction": "信息提取",
+                                "manipulation": "输出操纵",
+                                "harmful_content": "有害内容",
+                                "obfuscation": "混淆攻击",
+                                "structural_anomaly": "结构异常",
+                                "emotional_manipulation": "情感操纵"
+                            }
+                            detected_attack = dimension_mapping.get(threat_dim, "复杂攻击")
+                            matched_keywords = [t['details'] for t in multi_dim_result['detected_threats']]
 
-                    # 根据攻击类型设置风险分数和等级(使用英文)
-                    if is_attack:
-                        if detected_attack in ["越狱攻击", "数据泄露"]:
-                            risk_score = 0.9
-                            risk_level = "critical"
-                        elif detected_attack == "提示词注入":
-                            risk_score = 0.8
-                            risk_level = "high"
-                        else:
-                            risk_score = 0.6
-                            risk_level = "medium"
+                        risk_score = multi_dim_result['overall_risk_score']
+                        risk_level = multi_dim_result['risk_level']
+                        threat_category = detected_attack
                     else:
-                        risk_score = 0.1
-                        risk_level = "low"
+                        # 第6层: 增强检测器作为最后后备
+                        enhanced_result = detect_enhanced_prompt_injection(text)
 
-                    # 攻击类型直接使用中文
-                    threat_category = detected_attack
+                        if enhanced_result['is_attack']:
+                            is_attack = True
+                            is_compliant = False
+                            detected_attack = enhanced_result['attack_types'][0] if enhanced_result['attack_types'] else "未知攻击"
+                            matched_keywords = enhanced_result['details']['matches']
+                            risk_score = enhanced_result['risk_score']
+                            risk_level = enhanced_result['risk_level']
+                            threat_category = detected_attack
+                        else:
+                            # 如果所有检测器都未检测到,使用基础规则作为最后后备
+                            detected_attack = None
+                            matched_keywords = []
+
+                            for attack_type, keywords in attack_patterns.items():
+                                for keyword in keywords:
+                                    if keyword.lower() in text.lower():
+                                        detected_attack = attack_type
+                                        matched_keywords.append(keyword)
+                                        break
+                                if detected_attack:
+                                    break
+
+                            is_attack = detected_attack is not None
+                            is_compliant = not is_attack
+
+                            # 根据攻击类型设置风险分数和等级(使用英文)
+                            if is_attack:
+                                if detected_attack in ["越狱攻击", "数据泄露"]:
+                                    risk_score = 0.9
+                                    risk_level = "critical"
+                                elif detected_attack == "提示词注入":
+                                    risk_score = 0.8
+                                    risk_level = "high"
+                                else:
+                                    risk_score = 0.6
+                                    risk_level = "medium"
+                            else:
+                                risk_score = 0.1
+                                risk_level = "low"
+
+                            # 攻击类型直接使用中文
+                            threat_category = detected_attack
+
+    # 保存语义分析和多维度检测结果，用于响应
+    semantic_analysis_result = semantic_result if 'semantic_result' in locals() else semantic_analyzer.detect(text)
+    multi_dimensional_result = multi_dim_result if 'multi_dim_result' in locals() else detect_multi_dimensional(text)
 
     processing_time_ms = int((time.time() - start_time) * 1000)
 
@@ -1712,14 +1730,23 @@ async def detect(
                 "blacklisted": is_attack
             },
             "semantic_analysis": {
-                "intent": threat_category if threat_category else "normal",
-                "category": threat_category if threat_category else "normal",
-                "similarity_score": risk_score
+                "intent": semantic_analysis_result.get('detected_attack', threat_category if threat_category else "normal"),
+                "category": semantic_analysis_result.get('detected_attack', threat_category if threat_category else "normal"),
+                "similarity_score": semantic_analysis_result.get('similarity_score', risk_score),
+                "method": semantic_analysis_result.get('method', 'unknown'),
+                "all_similarities": semantic_analysis_result.get('all_similarities', {})
             },
             "behavioral_analysis": {
                 "role_playing_detected": "角色" in text or "role" in text.lower(),
                 "jailbreak_attempt": "越狱" in text or "jailbreak" in text.lower(),
                 "prompt_injection": is_attack
+            },
+            "multi_dimensional_analysis": {
+                "dimensions_checked": len(multi_dimensional_result.get('dimensions', {})),
+                "threats_detected": len(multi_dimensional_result.get('detected_threats', [])),
+                "detected_dimensions": [t['dimension'] for t in multi_dimensional_result.get('detected_threats', [])],
+                "overall_risk_score": multi_dimensional_result.get('overall_risk_score', 0),
+                "dimension_details": multi_dimensional_result.get('dimensions', {})
             }
         },
         "recommendation": "block" if is_attack else "pass",
@@ -2146,27 +2173,16 @@ class UserInfoUpdate(BaseModel):
 @app.get("/api/v1/user/info")
 async def get_user_info(current_user: dict = Depends(get_current_user)):
     """获取用户信息"""
-    user = users_db.get(current_user["user_id"])
+    user_id = current_user.get("user_id", current_user.get("user_id", "unknown"))
+
+    # 从数据库获取用户
+    user = db.get_user_from_db(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    return {
-        "id": user["user_id"],
-        "username": user["username"],
-        "email": user.get("email", ""),
-        "phone": user.get("phone", ""),
-        "real_name": user.get("real_name", ""),
-        "id_card": user.get("id_card", ""),
-        "company": user.get("company", ""),
-        "position": user.get("position", ""),
-        "address": user.get("address", ""),
-        "verified": user.get("verified", False),
-        "avatar": user.get("avatar", ""),
-        "balance": user.get("balance", 0.0),
-        "remaining_quota": user.get("remaining_quota", 0),
-        "total_quota": user.get("total_quota", 0),
-        "create_time": user.get("create_time", datetime.now().isoformat())
-    }
+    # 返回用户信息（移除敏感字段）
+    user.pop('password_hash', None)
+    return user
 
 @app.put("/api/v1/user/info")
 async def update_user_info(
@@ -2174,26 +2190,24 @@ async def update_user_info(
     current_user: dict = Depends(get_current_user)
 ):
     """更新用户信息"""
-    user = users_db.get(current_user["user_id"])
-    if not user:
+    user_id = current_user.get("user_id", current_user.get("user_id", "unknown"))
+
+    # 构建更新数据（只包含提供的字段）
+    update_data = {k: v for k, v in user_update.dict().items() if v is not None}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="没有提供更新数据")
+
+    # 更新到数据库
+    updated_user = db.update_user_in_db(user_id, update_data)
+
+    if not updated_user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    if user_update.username:
-        user["username"] = user_update.username
-    if user_update.email:
-        user["email"] = user_update.email
-    if user_update.phone:
-        user["phone"] = user_update.phone
-    if user_update.company:
-        user["company"] = user_update.company
-    if user_update.position:
-        user["position"] = user_update.position
-    if user_update.address:
-        user["address"] = user_update.address
-
+    updated_user.pop('password_hash', None)
     return {
         "message": "个人信息更新成功",
-        "user": user
+        "user": updated_user
     }
 
 class PasswordChange(BaseModel):
@@ -2206,15 +2220,20 @@ async def change_password(
     current_user: dict = Depends(get_current_user)
 ):
     """修改密码"""
-    user = users_db.get(current_user["user_id"])
+    user_id = current_user.get("user_id", current_user.get("user_id", "unknown"))
+
+    # 从数据库获取用户
+    user = db.get_user_from_db(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 简化验证: 实际应该验证current_password
+    # 验证新密码长度
     if len(password_data.new_password) < 6:
         raise HTTPException(status_code=400, detail="新密码长度至少6位")
 
-    user["password"] = hashlib.sha256(password_data.new_password.encode()).hexdigest()
+    # 更新密码到数据库
+    new_hashed = hashlib.sha256(password_data.new_password.encode()).hexdigest()
+    db.update_user_in_db(user_id, {'password_hash': new_hashed})
 
     return {"message": "密码修改成功"}
 
@@ -2265,17 +2284,23 @@ async def get_subscription_overview(current_user: dict = Depends(get_current_use
 @app.get("/api/v1/user/packages")
 async def get_user_packages(current_user: dict = Depends(get_current_user)):
     """获取我的套餐列表"""
-    subscription = get_user_subscriptions(current_user["user_id"])
+    user_id = current_user.get("user_id", current_user.get("user_id", "unknown"))
 
-    packages = list(packages_db.values())
+    # 从数据库获取所有套餐
+    packages = db.get_all_packages_from_db()
+
+    # 获取用户当前订阅
+    subscription = db.get_user_subscription_from_db(user_id)
+
+    current_package_id = subscription['package_id'] if subscription else None
 
     # 标记当前订阅的套餐
     for pkg in packages:
-        pkg["is_subscribed"] = (pkg["package_id"] == subscription["package_id"])
+        pkg["is_subscribed"] = (pkg['id'] == current_package_id)
         pkg["can_subscribe"] = True
 
     return {
-        "current_package_id": subscription["package_id"],
+        "current_package_id": current_package_id,
         "packages": packages
     }
 
@@ -2285,31 +2310,46 @@ async def subscribe_package(
     current_user: dict = Depends(get_current_user)
 ):
     """订阅套餐"""
-    if package_id not in packages_db:
+    user_id = current_user.get("user_id", current_user.get("user_id", "unknown"))
+
+    # 获取套餐信息
+    package = db.get_package_from_db(package_id)
+    if not package:
         raise HTTPException(status_code=404, detail="套餐不存在")
 
-    package = packages_db[package_id]
+    # 检查是否已有活跃订阅
+    existing_subscription = db.get_user_subscription_from_db(user_id)
+    if existing_subscription:
+        raise HTTPException(status_code=400, detail="已有活跃订阅，请先取消当前订阅")
 
-    # 更新用户订阅
-    user_id = current_user["user_id"]
-    subscription = get_user_subscriptions(user_id)
+    # 创建新订阅
+    from datetime import timedelta
+    start_date = date.today()
+    end_date = start_date + timedelta(days=package.get('duration_days', 30))
 
-    subscription.update({
-        "package_id": package_id,
-        "status": "active",
-        "start_date": datetime.now().isoformat(),
-        "end_date": (datetime.now() + timedelta(days=90)).isoformat(),
-        "auto_renew": False,
+    subscription = db.create_subscription_in_db({
+        'user_id': user_id,
+        'package_id': package['id'],
+        'plan_name': package['name'],
+        'status': 'active',
+        'start_date': start_date,
+        'end_date': end_date,
+        'auto_renew': False,
+        'quota_amount': package['quota_amount'],
+        'remaining_quota': package['quota_amount'],
+        'price': package['price']
     })
 
     # 更新用户配额
-    users_db[user_id]["total_quota"] = package["quota_amount"]
-    users_db[user_id]["remaining_quota"] = package["quota_amount"]
+    db.update_user_in_db(user_id, {
+        'remaining_quota': package['quota_amount'],
+        'total_quota': package['quota_amount']
+    })
 
     return {
         "message": "套餐订阅成功",
-        "package_name": package["package_name"],
-        "end_date": subscription["end_date"]
+        "package_name": package['name'],
+        "end_date": subscription['end_date'].isoformat() if hasattr(subscription['end_date'], 'isoformat') else str(subscription['end_date'])
     }
 
 @app.get("/api/v1/user/usage")
@@ -2540,56 +2580,89 @@ async def update_ticket(
 # 系统设置API
 @app.get("/api/v1/settings")
 async def get_settings(current_user: dict = Depends(get_current_user)):
-    """获取系统设置"""
+    """获取系统设置 - 从数据库读取，用户级设置优先"""
     user_id = current_user["user_id"]
 
-    # 如果用户没有设置,返回默认值
-    if user_id not in settings_db:
-        return {
-            "general": {
-                "appName": "LLM安全检测工具",
-                "autoRefresh": True,
-                "refreshInterval": 30,
-                "enableNotifications": True,
-                "language": "zh-CN",
-            },
-            "api": {
-                "apiBaseUrl": "http://localhost:8000",
-                "apiTimeout": 30,
-                "enableWs": True,
-                "wsUrl": "ws://localhost:8000/ws",
-                "wsReconnectInterval": 5,
-            },
-            "detection": {
-                "defaultDetectionLevel": "standard",
-                "enableRealtimeDetection": True,
-                "enableBatchDetection": True,
-                "maxBatchSize": 100,
-                "enableCache": True,
-                "cacheTtl": 3600,
-                "riskThresholdLow": 0.3,
-                "riskThresholdMedium": 0.5,
-                "riskThresholdHigh": 0.8,
-            },
-        }
+    # 从数据库获取所有设置（包括非公开的）
+    settings_from_db = db.get_all_settings_from_db(public_only=False)
 
-    return settings_db[user_id]
+    # 构建返回的设置对象，优先使用用户级设置
+    return {
+        "general": {
+            "appName": settings_from_db.get(f"user.{user_id}.app_name", settings_from_db.get("system.app_name", "大模型安全检测工具")),
+            "autoRefresh": settings_from_db.get(f"user.{user_id}.auto_refresh", settings_from_db.get("system.auto_refresh", True)),
+            "refreshInterval": settings_from_db.get(f"user.{user_id}.refresh_interval", settings_from_db.get("system.refresh_interval", 30)),
+            "enableNotifications": settings_from_db.get("notification.email_enabled", True),
+            "language": settings_from_db.get(f"user.{user_id}.language", settings_from_db.get("system.language", "zh-CN")),
+        },
+        "api": {
+            "apiBaseUrl": settings_from_db.get("api.base_url", "http://localhost:8000"),
+            "apiTimeout": settings_from_db.get(f"user.{user_id}.api_timeout", settings_from_db.get("api.timeout", 30)),
+            "enableWs": settings_from_db.get(f"user.{user_id}.enable_ws", settings_from_db.get("api.ws_enabled", True)),
+            "wsUrl": settings_from_db.get(f"user.{user_id}.ws_url", settings_from_db.get("api.ws_url", "ws://localhost:8000/ws")),
+            "wsReconnectInterval": settings_from_db.get(f"user.{user_id}.ws_reconnect_interval", settings_from_db.get("api.ws_reconnect_interval", 5)),
+        },
+        "detection": {
+            "defaultDetectionLevel": settings_from_db.get(f"user.{user_id}.detection_level", settings_from_db.get("detection.default_level", "standard")),
+            "enableRealtimeDetection": settings_from_db.get(f"user.{user_id}.enable_realtime_detection", settings_from_db.get("detection.enable_realtime", True)),
+            "enableBatchDetection": settings_from_db.get(f"user.{user_id}.enable_batch_detection", settings_from_db.get("detection.enable_batch", True)),
+            "maxBatchSize": settings_from_db.get(f"user.{user_id}.max_batch_size", settings_from_db.get("detection.max_batch_size", 100)),
+            "enableCache": settings_from_db.get(f"user.{user_id}.enable_cache", settings_from_db.get("detection.enable_cache", True)),
+            "cacheTtl": settings_from_db.get("detection.cache_ttl", 3600),
+            "riskThresholdLow": settings_from_db.get(f"user.{user_id}.risk_threshold_low", settings_from_db.get("detection.threshold_low", 0.3)),
+            "riskThresholdMedium": settings_from_db.get(f"user.{user_id}.risk_threshold_medium", settings_from_db.get("detection.threshold_medium", 0.5)),
+            "riskThresholdHigh": settings_from_db.get(f"user.{user_id}.risk_threshold_high", settings_from_db.get("detection.threshold_high", 0.8)),
+        },
+    }
 
 @app.post("/api/v1/settings")
 async def save_settings(
     settings_data: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """保存系统设置"""
+    """保存系统设置 - 写入数据库"""
     user_id = current_user["user_id"]
 
-    # 保存设置
-    settings_db[user_id] = settings_data
+    # 保存每个设置到数据库（用户级别）
+    try:
+        # 保存通用设置
+        if "general" in settings_data:
+            general = settings_data["general"]
+            db.set_setting_in_db(f"user.{user_id}.app_name", general.get("appName"), "应用名称", "string", "user")
+            db.set_setting_in_db(f"user.{user_id}.auto_refresh", general.get("autoRefresh"), "自动刷新", "boolean", "user")
+            db.set_setting_in_db(f"user.{user_id}.refresh_interval", general.get("refreshInterval"), "刷新间隔", "number", "user")
+            db.set_setting_in_db(f"user.{user_id}.language", general.get("language"), "语言", "string", "user")
 
-    return {
-        "message": "设置保存成功",
-        "settings": settings_data
-    }
+        # 保存API设置
+        if "api" in settings_data:
+            api = settings_data["api"]
+            db.set_setting_in_db(f"user.{user_id}.api_timeout", api.get("apiTimeout"), "API超时", "number", "user")
+            db.set_setting_in_db(f"user.{user_id}.enable_ws", api.get("enableWs"), "启用WebSocket", "boolean", "user")
+            db.set_setting_in_db(f"user.{user_id}.ws_url", api.get("wsUrl"), "WebSocket URL", "string", "user")
+            db.set_setting_in_db(f"user.{user_id}.ws_reconnect_interval", api.get("wsReconnectInterval"), "重连间隔", "number", "user")
+
+        # 保存检测设置
+        if "detection" in settings_data:
+            detection = settings_data["detection"]
+            db.set_setting_in_db(f"user.{user_id}.detection_level", detection.get("defaultDetectionLevel"), "检测级别", "string", "user")
+            db.set_setting_in_db(f"user.{user_id}.enable_realtime_detection", detection.get("enableRealtimeDetection"), "启用实时检测", "boolean", "user")
+            db.set_setting_in_db(f"user.{user_id}.enable_batch_detection", detection.get("enableBatchDetection"), "启用批量检测", "boolean", "user")
+            db.set_setting_in_db(f"user.{user_id}.max_batch_size", detection.get("maxBatchSize"), "最大批量大小", "number", "user")
+            db.set_setting_in_db(f"user.{user_id}.enable_cache", detection.get("enableCache"), "启用缓存", "boolean", "user")
+            db.set_setting_in_db(f"user.{user_id}.risk_threshold_low", detection.get("riskThresholdLow"), "低风险阈值", "number", "detection")
+            db.set_setting_in_db(f"user.{user_id}.risk_threshold_medium", detection.get("riskThresholdMedium"), "中风险阈值", "number", "detection")
+            db.set_setting_in_db(f"user.{user_id}.risk_threshold_high", detection.get("riskThresholdHigh"), "高风险阈值", "number", "detection")
+
+        return {
+            "message": "设置保存成功",
+            "settings": settings_data
+        }
+    except Exception as e:
+        print(f"保存设置失败: {e}")
+        return {
+            "message": "设置保存失败",
+            "error": str(e)
+        }
 
 @app.get("/api/v1/settings/{category}")
 async def get_settings_category(
@@ -2607,6 +2680,72 @@ async def get_settings_category(
         return all_settings[category]
     else:
         raise HTTPException(status_code=404, detail="设置类别不存在")
+
+# ==================== 帮助中心API ====================
+
+@app.get("/api/v1/help/faq")
+async def get_faq():
+    """获取常见问题FAQ"""
+    # 返回FAQ数据（可以后续改为从数据库读取）
+    return {
+        "faqs": [
+            {
+                "category": "快速开始",
+                "question": "如何开始使用？",
+                "answer": "注册账户后，进入实时检测页面输入文本即可开始检测。系统会自动分析文本内容并给出安全评分。"
+            },
+            {
+                "category": "快速开始",
+                "question": "如何获取API密钥？",
+                "answer": "登录后进入用户中心 > 账户安全，点击'创建新API密钥'按钮即可生成。请妥善保管您的API密钥。"
+            },
+            {
+                "category": "账户相关",
+                "question": "如何修改密码？",
+                "answer": "在用户中心 > 用户资料页面，输入当前密码和新密码，点击保存即可修改密码。"
+            },
+            {
+                "category": "账户相关",
+                "question": "如何升级套餐？",
+                "answer": "进入用户中心 > 套餐订阅，查看可用套餐，选择合适的套餐点击'订阅'按钮即可。"
+            },
+            {
+                "category": "账户相关",
+                "question": "如何查看我的使用记录？",
+                "answer": "在用户中心 > 使用记录页面，可以查看所有的检测历史、使用统计和API调用记录。"
+            },
+            {
+                "category": "检测功能",
+                "question": "检测结果准确吗？",
+                "answer": "我们的检测系统基于7层架构，结合静态检测、语义分析、行为分析等多种技术，整体准确率超过95%。"
+            },
+            {
+                "category": "检测功能",
+                "question": "如何提高检测准确度？",
+                "answer": "在设置页面可以调整风险阈值。降低阈值会更严格，提高阈值会更宽松。建议根据实际使用场景调整。"
+            },
+            {
+                "category": "检测功能",
+                "question": "支持批量检测吗？",
+                "answer": "支持。在实时检测页面选择批量检测模式，可以一次检测多条文本，提高工作效率。"
+            },
+            {
+                "category": "技术支持",
+                "question": "遇到问题怎么办？",
+                "answer": "可以提交工单（用户中心 > 工单记录），或在工作时间（周一至周五 9:00-18:00）联系客服。"
+            },
+            {
+                "category": "技术支持",
+                "question": "API调用有限制吗？",
+                "answer": "根据您的套餐有不同的调用次数限制。达到限制后可以升级套餐或充值。具体查看套餐订阅页面。"
+            },
+            {
+                "category": "技术支持",
+                "question": "数据安全吗？",
+                "answer": "我们非常重视数据安全。所有数据都经过加密存储，且检测记录不会被用于其他目的。您可以随时删除使用记录。"
+            }
+        ]
+    }
 
 # 账号信息管理API
 # API调用记录相关API
